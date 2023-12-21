@@ -9,7 +9,6 @@ use bevy::pbr::PbrBundle;
 use bevy::pbr::PointLight;
 use bevy::pbr::PointLightBundle;
 use bevy::render::mesh::shape::UVSphere;
-use crate::UVSphere;
 use bevy::render::mesh::Mesh;
 use bevy::transform::components::Transform;
 use bevy::utils::default;
