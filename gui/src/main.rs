@@ -1,4 +1,5 @@
 use ::bevy::prelude::*;
+use ::bevy::prelude::Camera3dBundle::*;
 
 fn main() {
     fn nothing() {
@@ -32,7 +33,7 @@ fn main() {
                 // このxyzはカメラの向きと同じ
                 transform: Transform::from_xyz(0.0, 1.0, 0.0),
                 ..default()
-            })
+            });
         }
     }
 }
