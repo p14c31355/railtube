@@ -1,20 +1,19 @@
 use bevy::app::App;
-use bevy::DefaultPlugins;
 use bevy::app::Startup;
+use bevy::asset::Assets;
+use bevy::core_pipeline::core_3d::Camera3dBundle;
 use bevy::ecs::system::Commands;
 use bevy::ecs::system::ResMut;
-use bevy::asset::Assets;
-use bevy::render::mesh::Mesh;
-use bevy::core_pipeline::core_3d::Camera3dBundle;
-use bevy::transform::components::Transform;
 use bevy::math::Vec3;
-use bevy::pbr::PointLightBundle;
-use bevy::pbr::PointLight;
-use bevy::render::mesh::shape::UVSphere;
 use bevy::pbr::PbrBundle;
-use bevy::transform::components::Transform;
+use bevy::pbr::PointLight;
+use bevy::pbr::PointLightBundle;
 use bevy::render::mesh::shape::UVSphere;
+use crate::UVSphere;
+use bevy::render::mesh::Mesh;
+use bevy::transform::components::Transform;
 use bevy::utils::default;
+use bevy::DefaultPlugins;
 
 fn main() {
     fn nothing() {
