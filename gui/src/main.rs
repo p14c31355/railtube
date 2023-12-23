@@ -31,7 +31,7 @@ use bevy::DefaultPlugins;
 use bevy::render::mesh::shape::UVSphere;
 use crate::UVSphere;
 
-bevy::prelude::PointLight!();
+use bevy::prelude::PointLight!();
 
 fn main() {
     fn nothing() {
