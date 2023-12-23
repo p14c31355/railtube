@@ -8,11 +8,14 @@ use bevy::math::Vec3;
 use bevy::pbr::PbrBundle;
 use bevy::pbr::PointLight;
 use bevy::pbr::PointLightBundle;
-use bevy::render::mesh::shape::UVSphere;
 use bevy::render::mesh::Mesh;
 use bevy::transform::components::Transform;
 use bevy::utils::default;
 use bevy::DefaultPlugins;
+use bevy::render::mesh::shape::UVSphere;
+use crate::UVSphere;
+
+bevy::prelude::PointLight::*();
 
 fn main() {
     fn nothing() {
@@ -40,7 +43,7 @@ fn main() {
                     transform: Transform::from_xyz(8.0, 16.0, 8.0),
                 },
             });
-            let sphere = meshes.add(shape::UVSphere::default().into());
+            let sphere = meshes.add(UVSphere::default().into());
             commands.spawn(PbrBundle {
                 mesh: sphere,
                 // このxyzはカメラの向きと同じ
