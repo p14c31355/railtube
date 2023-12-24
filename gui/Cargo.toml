@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bevy = "0.12.1"
 clippy = "0.0.302"
+rust-analyzer = "0.0.1"
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]
