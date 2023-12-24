@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#[warn(unused_imports)]
 use bevy::app::App;
 use bevy::app::Startup;
 use bevy::asset::Assets;
@@ -34,6 +33,7 @@ use bevy::prelude::Camera3dBundle;
 use bevy::prelude::PointLight;
 use bevy::prelude::PointLightBundle;
 
+#[warn(unused_imports)]
 fn main() {
     fn camera() {
         App::new()
