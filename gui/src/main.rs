@@ -14,20 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use bevy::app;
-use bevy::DefaultPlugins;
-use bevy::ecs::system;
-use bevy::asset::Assets;
-use bevy::render::mesh::Mesh;
-use bevy::core_pipeline::core_3d::Camera3dBundle;
-use bevy::transform::components::Transform;
-use bevy::math::Vec3;
-use bevy::pbr;
-use bevy::render::mesh::shape::UVSphere;
-use bevy::pbr::PbrBundle;
-use bevy::utils::default;
+use bevy::prelude::*;
 
-#[warn(unused_imports)]
 fn main() {
     fn camera() {
         App::new()
