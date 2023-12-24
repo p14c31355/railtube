@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+#[warn(unused_imports)]
 use bevy::app::App;
 use bevy::app::Startup;
 use bevy::asset::Assets;
@@ -23,21 +24,17 @@ use bevy::ecs::system::ResMut;
 use bevy::math::Vec3;
 use bevy::pbr::PbrBundle;
 use bevy::pbr::PointLightBundle;
+use bevy::render::mesh::shape::UVSphere;
 use bevy::render::mesh::Mesh;
 use bevy::transform::components::Transform;
 use bevy::utils::default;
 use bevy::DefaultPlugins;
-use bevy::render::mesh::shape::UVSphere;
 
-use bevy::prelude::PointLight;
 use bevy::prelude::Camera3dBundle;
+use bevy::prelude::PointLight;
 use bevy::prelude::PointLightBundle;
 
 fn main() {
-    fn nothing() {
-        App::new().run();
-    }
-
     fn camera() {
         App::new()
             .add_plugins(DefaultPlugins)
