@@ -22,7 +22,6 @@ use bevy::ecs::system::Commands;
 use bevy::ecs::system::ResMut;
 use bevy::math::Vec3;
 use bevy::pbr::PbrBundle;
-use bevy::pbr::PointLightBundle;
 use bevy::render::mesh::shape::UVSphere;
 use bevy::render::mesh::Mesh;
 use bevy::transform::components::Transform;
