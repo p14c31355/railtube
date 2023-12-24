@@ -15,6 +15,7 @@ limitations under the License.
 */
 
 use bevy::prelude::*;
+use crate::shape::UVSphere;
 
 fn main() {
     fn camera() {
