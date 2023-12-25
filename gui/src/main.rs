@@ -24,7 +24,7 @@ fn main() {
             .add_systems(Startup, setup)
             .run();
 
-        fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+        fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut transform: Transform, point_light: PointLight) {
             // カメラを追加
             commands.spawn(Camera3dBundle {
                 transform: Transform::from_xyz(0.0, 6., 12.0)
