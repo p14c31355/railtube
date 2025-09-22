@@ -1,8 +1,36 @@
 use clap::{Parser, Subcommand};
-use reqwest::blocking::Client;
 use serde::Deserialize;
-use std::{fs, io::Read, process::Command};
+use std::{fs, process::Command, io::{Read, Write}, path::PathBuf, collections::HashMap};
+use reqwest::blocking::Client;
 use tempfile::tempdir;
+
+// Custom error type for command execution
+#[derive(Debug)]
+struct CommandError {
+    command: String,
+    args: Vec<String>,
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+impl std::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Command failed: {} {}\n", self.command, self.args.join(" "))?;
+        if let Some(code) = self.exit_code {
+            write!(f, "Exit code: {}\n", code)?;
+        }
+        if !self.stdout.is_empty() {
+            write!(f, "Stdout: {}\n", self.stdout)?;
+        }
+        if !self.stderr.is_empty() {
+            write!(f, "Stderr: {}\n", self.stderr)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for CommandError {}
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -12,8 +40,7 @@ struct Config {
     flatpak: Option<Section>,
     cargo: Option<Section>,
     deb: Option<DebSection>,
-    scripts: Option<ScriptsSection>, // New section for scripts
-                                     // dotfiles: Option<DotfilesSection>, // Future implementation
+    scripts: Option<ScriptsSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,14 +60,9 @@ struct DebSection {
 
 #[derive(Debug, Deserialize)]
 struct ScriptsSection {
-    #[serde(flatten)] // Use flatten to capture all key-value pairs as commands
-    commands: std::collections::HashMap<String, String>,
+    #[serde(flatten)]
+    commands: HashMap<String, String>,
 }
-
-// #[derive(Debug, Deserialize)]
-// struct DotfilesSection {
-//     repo: String,
-// }
 
 /// Railtube: Declarative OS Package Management
 #[derive(Parser, Debug)]
@@ -68,18 +90,31 @@ enum Commands {
     },
 }
 
-fn run_command(cmd: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
     println!("> {} {}", cmd, args.join(" "));
     let mut command = Command::new(cmd);
     command.args(args);
 
-    let output = command.output()?;
+    let output = command.output().map_err(|e| CommandError {
+        command: cmd.to_string(),
+        args: args.iter().map(|s| s.to_string()).collect(),
+        exit_code: None,
+        stdout: String::new(),
+        stderr: e.to_string(),
+    })?;
+
+    let exit_code = output.status.code();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        eprintln!("Command failed: {} {}", cmd, args.join(" "));
-        eprintln!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
-        eprintln!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
-        return Err(format!("Command failed: {} {}", cmd, args.join(" ")).into());
+        return Err(CommandError {
+            command: cmd.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            exit_code,
+            stdout,
+            stderr,
+        });
     }
     Ok(())
 }
@@ -99,56 +134,52 @@ fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>
     }
 }
 
-fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     // Handle system updates
-    if let Some(sys) = config.system {
+    if let Some(sys) = &config.system {
         if sys.update {
             run_command("sudo", &["apt", "update"])?;
         }
     }
 
     // Execute APT commands
-    if let Some(apt) = config.apt {
-        for pkg in apt.list {
-            run_command("sudo", &["apt", "install", "-y", &pkg])?;
+    if let Some(apt) = &config.apt {
+        for pkg in &apt.list {
+            run_command("sudo", &["apt", "install", "-y", pkg])?;
         }
     }
 
     // Execute Snap commands
-    if let Some(snap) = config.snap {
-        for pkg in snap.list {
-            run_command("sudo", &["snap", "install", &pkg])?;
+    if let Some(snap) = &config.snap {
+        for pkg in &snap.list {
+            run_command("sudo", &["snap", "install", pkg])?;
         }
     }
 
     // Execute Flatpak commands
-    if let Some(flatpak) = config.flatpak {
-        for pkg in flatpak.list {
-            run_command("flatpak", &["install", "-y", &pkg])?;
+    if let Some(flatpak) = &config.flatpak {
+        for pkg in &flatpak.list {
+            run_command("flatpak", &["install", "-y", pkg])?;
         }
     }
 
     // Execute Cargo install commands
-    if let Some(cargo) = config.cargo {
-        for pkg in cargo.list {
-            run_command("cargo", &["install", &pkg])?;
+    if let Some(cargo) = &config.cargo {
+        for pkg in &cargo.list {
+            run_command("cargo", &["install", pkg])?;
         }
     }
 
     // Handle .deb files
-    if let Some(deb) = config.deb {
+    if let Some(deb) = &config.deb {
         let temp_dir = tempdir()?;
-        for url in deb.urls {
-            let filename = url
-                .split('/')
-                .next_back()
-                .filter(|name| !name.is_empty())
-                .unwrap_or("package.deb");
+        for url in &deb.urls {
+            let filename = url.split('/').last().unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
             let client = Client::new();
-            let mut response = client.get(&url).send()?;
+            let mut response = client.get(url).send()?;
             if !response.status().is_success() {
                 return Err(format!("Failed to download {}: {}", url, response.status()).into());
             }
@@ -156,16 +187,7 @@ fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             response.copy_to(&mut file)?;
 
             println!("Installing {}...", temp_path.display());
-            run_command(
-                "sudo",
-                &[
-                    "dpkg",
-                    "-i",
-                    temp_path
-                        .to_str()
-                        .ok_or("Temporary path contains invalid UTF-8")?,
-                ],
-            )?;
+            run_command("sudo", &["dpkg", "-i", temp_path.to_str().unwrap()])?;
             run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
         }
     }
@@ -173,17 +195,25 @@ fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_scripts(config: Config, script_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(scripts) = config.scripts {
+fn run_scripts(config: &Config, script_name: &str, is_remote_source: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(scripts) = &config.scripts {
         if let Some(command_to_run) = scripts.commands.get(script_name) {
             println!("Running script '{}': {}", script_name, command_to_run);
-            // Execute the command string. This is a simplified approach;
-            // a more robust solution might involve parsing the command string.
-            // For now, we assume it's a single command or can be executed directly.
-            // This might require using a shell to interpret complex commands.
-            // For simplicity, let's try to split it into command and args if possible,
-            // or just execute it via a shell.
-            // A safer approach for arbitrary commands is to use a shell.
+
+            if is_remote_source {
+                println!("WARNING: Executing script from a remote source.");
+                // Prompt for confirmation
+                print!("Do you want to proceed? (y/N): ");
+                std::io::Write::flush(&mut std::io::stdout())?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                if !input.trim().eq_ignore_ascii_case("y") {
+                    println!("Script execution aborted by user.");
+                    return Ok(()); // User chose not to proceed
+                }
+            }
+
+            // Execute the command string using a shell for flexibility
             run_command("sh", &["-c", command_to_run])?;
         } else {
             eprintln!("Script '{}' not found in [scripts] section.", script_name);
@@ -199,21 +229,28 @@ fn run_scripts(config: Config, script_name: &str) -> Result<(), Box<dyn std::err
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    // Fetch and parse TOML configuration
+    let config: Config = match args.command {
+        Commands::Apply { ref source } => {
+            let toml_str = fetch_toml_content(source)?;
+            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+        }
+        Commands::Run { ref source, ref script_name } => {
+            let toml_str = fetch_toml_content(source)?;
+            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+        }
+    };
+
+    // Execute the appropriate command
     match args.command {
-        Commands::Apply { source } => {
-            let toml_str = fetch_toml_content(&source)?;
-            let config: Config = toml::from_str(&toml_str)?;
-            apply_config(config)?;
+        Commands::Apply { ref source } => {
+            apply_config(&config)?;
         }
-        Commands::Run {
-            source,
-            script_name,
-        } => {
-            let toml_str = fetch_toml_content(&source)?;
-            let config: Config = toml::from_str(&toml_str)?;
-            run_scripts(config, &script_name)?;
+        Commands::Run { ref source, ref script_name } => {
+            let is_remote = source.starts_with("http://") || source.starts_with("https://");
+            run_scripts(&config, script_name, is_remote)?;
         }
-    }
+    };
 
     Ok(())
 }
