@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
-use serde::Deserialize;
-use std::{fs, process::Command, io::Read, collections::HashMap};
 use reqwest::blocking::Client;
+use serde::Deserialize;
+use std::{collections::HashMap, fs, io::Read, process::Command};
 use tempfile::tempdir;
 
 // Custom error type for command execution
@@ -16,15 +16,20 @@ struct CommandError {
 
 impl std::fmt::Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Command failed: {} {}\n", self.command, self.args.join(" "))?;
+        writeln!(
+            f,
+            "Command failed: {} {}",
+            self.command,
+            self.args.join(" ")
+        )?;
         if let Some(code) = self.exit_code {
-            write!(f, "Exit code: {}\n", code)?;
+            writeln!(f, "Exit code: {}", code)?;
         }
         if !self.stdout.is_empty() {
-            write!(f, "Stdout: {}\n", self.stdout)?;
+            writeln!(f, "Stdout: {}", self.stdout)?;
         }
         if !self.stderr.is_empty() {
-            write!(f, "Stderr: {}\n", self.stderr)?;
+            writeln!(f, "Stderr: {}", self.stderr)?;
         }
         Ok(())
     }
@@ -178,7 +183,7 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = tempdir()?;
         let client = Client::new(); // Client created here, outside the loop
         for url in &deb.urls {
-            let filename = url.split('/').last().unwrap_or("package.deb");
+            let filename = url.split('/').next_back().unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
@@ -198,7 +203,11 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_scripts(config: &Config, script_name: &str, is_remote_source: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run_scripts(
+    config: &Config,
+    script_name: &str,
+    is_remote_source: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(scripts) = &config.scripts {
         if let Some(command_to_run) = scripts.commands.get(script_name) {
             println!("Running script '{}': {}", script_name, command_to_run);
@@ -236,11 +245,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config: Config = match args.command {
         Commands::Apply { ref source } => {
             let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+            toml::from_str(&toml_str)
+                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
-        Commands::Run { ref source, ref script_name } => {
+        Commands::Run {
+            ref source,
+            ref script_name,
+        } => {
             let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+            toml::from_str(&toml_str)
+                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
     };
 
@@ -249,7 +263,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Apply { ref source } => {
             apply_config(&config)?;
         }
-        Commands::Run { ref source, ref script_name } => {
+        Commands::Run {
+            ref source,
+            ref script_name,
+        } => {
             let is_remote = source.starts_with("http://") || source.starts_with("https://");
             run_scripts(&config, script_name, is_remote)?;
         }
