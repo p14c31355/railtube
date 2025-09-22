@@ -1,12 +1,7 @@
 use clap::{Parser, Subcommand};
-use reqwest::blocking::Client;
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    fs,
-    io::{Read, Write},
-    process::Command,
-};
+use std::{fs, process::Command, io::Read, collections::HashMap};
+use reqwest::blocking::Client;
 use tempfile::tempdir;
 
 // Custom error type for command execution
@@ -21,20 +16,15 @@ struct CommandError {
 
 impl std::fmt::Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "Command failed: {} {}",
-            self.command,
-            self.args.join(" ")
-        )?;
+        write!(f, "Command failed: {} {}\n", self.command, self.args.join(" "))?;
         if let Some(code) = self.exit_code {
-            writeln!(f, "Exit code: {}", code)?;
+            write!(f, "Exit code: {}\n", code)?;
         }
         if !self.stdout.is_empty() {
-            writeln!(f, "Stdout: {}", self.stdout)?;
+            write!(f, "Stdout: {}\n", self.stdout)?;
         }
         if !self.stderr.is_empty() {
-            writeln!(f, "Stderr: {}", self.stderr)?;
+            write!(f, "Stderr: {}\n", self.stderr)?;
         }
         Ok(())
     }
@@ -55,16 +45,19 @@ struct Config {
 
 #[derive(Debug, Deserialize)]
 struct SystemSection {
+    #[serde(default)] // Default to false if not present
     update: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct Section {
+    #[serde(default)] // Default to empty Vec if not present
     list: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DebSection {
+    #[serde(default)] // Default to empty Vec if not present
     urls: Vec<String>,
 }
 
@@ -131,8 +124,11 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
 
 fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>> {
     if source.starts_with("http://") || source.starts_with("https://") {
-        let client = Client::new();
-        let mut response = client.get(source).send()?.error_for_status()?;
+        let client = Client::new(); // Client created here, outside the loop
+        let mut response = client.get(source).send()?;
+        if !response.status().is_success() {
+            return Err(format!("Failed to fetch URL: {}", response.status()).into());
+        }
         let mut content = String::new();
         response.read_to_string(&mut content)?;
         Ok(content)
@@ -180,21 +176,21 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     // Handle .deb files
     if let Some(deb) = &config.deb {
         let temp_dir = tempdir()?;
+        let client = Client::new(); // Client created here, outside the loop
         for url in &deb.urls {
-            let filename = url.split('/').next_back().unwrap_or("package.deb");
+            let filename = url.split('/').last().unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
-            let client = Client::new();
-            let mut response = client.get(url).send()?.error_for_status()?;
+            let mut response = client.get(url).send()?;
+            if !response.status().is_success() {
+                return Err(format!("Failed to download {}: {}", url, response.status()).into());
+            }
             let mut file = fs::File::create(&temp_path)?;
             response.copy_to(&mut file)?;
 
             println!("Installing {}...", temp_path.display());
-            let path_str = temp_path
-                .to_str()
-                .ok_or("Temporary path is not valid UTF-8")?;
-            run_command("sudo", &["dpkg", "-i", path_str])?;
+            run_command("sudo", &["dpkg", "-i", temp_path.to_str().unwrap()])?;
             run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
         }
     }
@@ -202,11 +198,7 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_scripts(
-    config: &Config,
-    script_name: &str,
-    is_remote_source: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_scripts(config: &Config, script_name: &str, is_remote_source: bool) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(scripts) = &config.scripts {
         if let Some(command_to_run) = scripts.commands.get(script_name) {
             println!("Running script '{}': {}", script_name, command_to_run);
@@ -244,16 +236,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config: Config = match args.command {
         Commands::Apply { ref source } => {
             let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str)
-                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
-        Commands::Run {
-            ref source,
-            ref script_name,
-        } => {
+        Commands::Run { ref source, ref script_name } => {
             let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str)
-                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
     };
 
@@ -262,10 +249,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Apply { ref source } => {
             apply_config(&config)?;
         }
-        Commands::Run {
-            ref source,
-            ref script_name,
-        } => {
+        Commands::Run { ref source, ref script_name } => {
             let is_remote = source.starts_with("http://") || source.starts_with("https://");
             run_scripts(&config, script_name, is_remote)?;
         }
