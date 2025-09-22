@@ -1,0 +1,41 @@
+# packages.toml
+
+[system]
+update = true # Run apt update before installing apt packages
+
+[apt]
+list = [
+    "git",
+    "vim",
+    "curl",
+    "htop",
+]
+
+[snap]
+list = [
+    "spotify",
+    "code --classic", # Example of snap install with arguments
+]
+
+[flatpak]
+list = [
+    "com.discordapp.Discord",
+    "org.mozilla.firefox",
+]
+
+[cargo]
+list = [
+    "ripgrep", # Example: install ripgrep via cargo install
+    "bat",
+]
+
+[deb]
+urls = [
+    "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb", # Example .deb URL
+    "https://download.slack-edge.com/linux_releases/slack-desktop-4.29.149-amd64.deb",
+]
+
+# Scripts to run
+[scripts]
+setup-dev-env = "echo 'Setting up development environment...' && git config --global --add --bool push.default simple"
+update-all = "echo 'Updating all systems...' && sudo apt update && sudo apt upgrade -y && cargo install-update -a"
