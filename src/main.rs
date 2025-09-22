@@ -186,10 +186,7 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 
             println!("Downloading {} to {}", url, temp_path.display());
             let client = Client::new();
-            let mut response = client.get(url).send()?;
-            if !response.status().is_success() {
-                return Err(format!("Failed to download {}: {}", url, response.status()).into());
-            }
+            let mut response = client.get(url).send()?.error_for_status()?;
             let mut file = fs::File::create(&temp_path)?;
             response.copy_to(&mut file)?;
 
