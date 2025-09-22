@@ -139,7 +139,11 @@ fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(deb) = config.deb {
         let temp_dir = tempdir()?;
         for url in deb.urls {
-            let filename = url.split('/').last().filter(|name| !name.is_empty()).unwrap_or("package.deb");
+            let filename = url
+                .split('/')
+                .next_back()
+                .filter(|name| !name.is_empty())
+                .unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
@@ -152,7 +156,16 @@ fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             response.copy_to(&mut file)?;
 
             println!("Installing {}...", temp_path.display());
-            run_command("sudo", &["dpkg", "-i", temp_path.to_str().ok_or("Temporary path contains invalid UTF-8")?])?;
+            run_command(
+                "sudo",
+                &[
+                    "dpkg",
+                    "-i",
+                    temp_path
+                        .to_str()
+                        .ok_or("Temporary path contains invalid UTF-8")?,
+                ],
+            )?;
             run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
         }
     }
