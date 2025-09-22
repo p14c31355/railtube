@@ -139,7 +139,7 @@ fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(deb) = config.deb {
         let temp_dir = tempdir()?;
         for url in deb.urls {
-            let filename = url.split('/').next_back().unwrap_or("package.deb");
+            let filename = url.split('/').last().filter(|name| !name.is_empty()).unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
