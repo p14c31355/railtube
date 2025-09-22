@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
-use serde::Deserialize;
-use std::{fs, process::Command, io::Read, path::PathBuf};
 use reqwest::blocking::Client;
+use serde::Deserialize;
+use std::{fs, io::Read, process::Command};
 use tempfile::tempdir;
 
 #[derive(Debug, Deserialize)]
@@ -13,7 +13,7 @@ struct Config {
     cargo: Option<Section>,
     deb: Option<DebSection>,
     scripts: Option<ScriptsSection>, // New section for scripts
-    // dotfiles: Option<DotfilesSection>, // Future implementation
+                                     // dotfiles: Option<DotfilesSection>, // Future implementation
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,7 +139,7 @@ fn apply_config(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(deb) = config.deb {
         let temp_dir = tempdir()?;
         for url in deb.urls {
-            let filename = url.split('/').last().unwrap_or("package.deb");
+            let filename = url.split('/').next_back().unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
@@ -192,7 +192,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let config: Config = toml::from_str(&toml_str)?;
             apply_config(config)?;
         }
-        Commands::Run { source, script_name } => {
+        Commands::Run {
+            source,
+            script_name,
+        } => {
             let toml_str = fetch_toml_content(&source)?;
             let config: Config = toml::from_str(&toml_str)?;
             run_scripts(config, &script_name)?;
