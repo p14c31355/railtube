@@ -132,10 +132,7 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
 fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>> {
     if source.starts_with("http://") || source.starts_with("https://") {
         let client = Client::new();
-        let mut response = client.get(source).send()?;
-        if !response.status().is_success() {
-            return Err(format!("Failed to fetch URL: {}", response.status()).into());
-        }
+        let mut response = client.get(source).send()?.error_for_status()?;
         let mut content = String::new();
         response.read_to_string(&mut content)?;
         Ok(content)
