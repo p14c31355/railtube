@@ -197,7 +197,8 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
             response.copy_to(&mut file)?;
 
             println!("Installing {}...", temp_path.display());
-            run_command("sudo", &["dpkg", "-i", temp_path.to_str().unwrap()])?;
+            let path_str = temp_path.to_str().ok_or("Temporary path is not valid UTF-8")?;
+            run_command("sudo", &["dpkg", "-i", path_str])?;
             run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
         }
     }
