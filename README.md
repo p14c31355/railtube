@@ -25,7 +25,7 @@ Inspired by the desire for a unified and reproducible environment setup, Railtub
 1.  **Prerequisites**:
     *   Rust toolchain (including `cargo`) installed.
     *   `sudo` access for package installations.
-    *   `apt`, `snap`, `flatpak`, `dpkg`, `wget` (or equivalent for downloading), and a shell (`sh`) installed on your system.
+    *   `apt`, `snap`, `flatpak`, `dpkg`, and a shell (`sh`) installed on your system.
 
 2.  **Build and Install `railtube`**:
     Navigate to the project's root directory in your terminal and run:
