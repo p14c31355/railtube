@@ -14,7 +14,6 @@ exclude = [
   "target/",
   ".github/",
   ".gitignore",
-  "Cargo.lock",
   "tests/",
   "examples/",
 ]
