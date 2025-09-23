@@ -244,9 +244,11 @@ fn is_cargo_package_installed(pkg_name: &str) -> bool {
             // We need to check if the package name exists in the output.
             // A simple check for the package name followed by a space or newline should suffice.
             // Improved check using grep-like logic: filter lines starting with "pkg " and check for pkg_name.
-            stdout
-                .lines()
-                .any(|line| line.split_whitespace().next().map_or(false, |p| p.trim_end_matches(':') == pkg_name))
+            stdout.lines().any(|line| {
+                line.split_whitespace()
+                    .next()
+                    .is_some_and(|p| p.trim_end_matches(':') == pkg_name)
+            })
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
