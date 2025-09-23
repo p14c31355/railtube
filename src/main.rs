@@ -70,7 +70,6 @@ impl From<Box<dyn std::error::Error>> for CommandError {
     }
 }
 
-
 #[derive(Debug, Deserialize, Serialize)] // Added Serialize
 struct Config {
     system: Option<SystemSection>,
@@ -358,7 +357,11 @@ fn get_installed_apt_version(pkg_name: &str) -> Result<Option<String>, Box<dyn s
             return Ok(None); // Package not installed
         }
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to query version for APT package '{}': {}", pkg_name, stderr).into());
+        return Err(format!(
+            "Failed to query version for APT package '{}': {}",
+            pkg_name, stderr
+        )
+        .into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -430,11 +433,18 @@ fn get_installed_flatpak_packages() -> Result<Vec<String>, Box<dyn std::error::E
         .collect())
 }
 
-fn apply_config(config: &Config, dry_run: bool, yes: bool, only: Option<Vec<String>>) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_config(
+    config: &Config,
+    dry_run: bool,
+    yes: bool,
+    only: Option<Vec<String>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Helper closure to check if a section should be processed
     let should_process = |section_name: &str| -> bool {
         match &only {
-            Some(sections) => sections.iter().any(|s| s.eq_ignore_ascii_case(section_name)),
+            Some(sections) => sections
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case(section_name)),
             None => true, // Process all sections if 'only' is not specified
         }
     };
@@ -477,7 +487,10 @@ fn apply_config(config: &Config, dry_run: bool, yes: bool, only: Option<Vec<Stri
                     match get_installed_apt_version(pkg_name) {
                         Ok(Some(installed_version)) => {
                             if installed_version == *version_to_match {
-                                println!("APT package '{}' version '{}' already installed, skipping.", pkg_name, installed_version);
+                                println!(
+                                    "APT package '{}' version '{}' already installed, skipping.",
+                                    pkg_name, installed_version
+                                );
                                 continue; // Skip installation if version matches
                             } else {
                                 println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
@@ -502,7 +515,11 @@ fn apply_config(config: &Config, dry_run: bool, yes: bool, only: Option<Vec<Stri
             } else {
                 // Package is not installed.
                 if desired_version.is_some() {
-                    println!("APT package '{}' version '{}' not installed. Installing.", pkg_name, desired_version.as_ref().unwrap());
+                    println!(
+                        "APT package '{}' version '{}' not installed. Installing.",
+                        pkg_name,
+                        desired_version.as_ref().unwrap()
+                    );
                 } else {
                     println!("APT package '{}' not installed. Installing.", pkg_name);
                 }
@@ -611,7 +628,8 @@ fn apply_config(config: &Config, dry_run: bool, yes: bool, only: Option<Vec<Stri
     // Execute Cargo install commands in parallel, propagating errors
     if let Some(cargo) = &config.cargo {
         let result: Result<(), CommandError> = cargo.list.par_iter().try_for_each(|pkg| {
-            if !is_cargo_package_installed(pkg) { // Use the improved check
+            if !is_cargo_package_installed(pkg) {
+                // Use the improved check
                 let command_str = format!("cargo install {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
@@ -745,9 +763,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
 
     // Check APT packages
     if let Some(apt_section) = &config.apt {
-        let toml_packages = apt_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let toml_packages = apt_section
+            .list
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_apt_packages()?;
-        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages_set = installed_packages
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
 
         // Packages in TOML but not installed
         let missing_in_apt: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
@@ -770,9 +793,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
 
     // Check Snap packages
     if let Some(snap_section) = &config.snap {
-        let toml_packages = snap_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let toml_packages = snap_section
+            .list
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_snap_packages()?;
-        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages_set = installed_packages
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
 
         // Packages in TOML but not installed
         let missing_in_snap: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
@@ -795,12 +823,18 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
 
     // Check Flatpak packages
     if let Some(flatpak_section) = &config.flatpak {
-        let toml_packages = flatpak_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let toml_packages = flatpak_section
+            .list
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_flatpak_packages()?;
-        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages_set = installed_packages
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
 
         // Packages in TOML but not installed
-        let missing_in_flatpak: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
+        let missing_in_flatpak: Vec<_> =
+            toml_packages.difference(&installed_packages_set).collect();
         if !missing_in_flatpak.is_empty() {
             println!("\nFlatpak packages listed in TOML but not installed:");
             for pkg in missing_in_flatpak {
@@ -820,9 +854,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
 
     // Check Cargo packages
     if let Some(cargo_section) = &config.cargo {
-        let toml_packages = cargo_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let toml_packages = cargo_section
+            .list
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_cargo_packages()?;
-        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages_set = installed_packages
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
 
         // Packages in TOML but not installed
         let missing_in_cargo: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
@@ -846,13 +885,12 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Handle the Export command separately as it exits early
     if let Commands::Export { ref output } = args.command {
-        let mut exported_config = export_current_environment()?;
+        let exported_config = export_current_environment()?;
         let toml_string = toml::to_string_pretty(&exported_config)?;
 
         // Add comment for unexported sections
@@ -868,9 +906,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // For other commands, fetch and parse the TOML configuration
     let config: Config = match &args.command {
-        Commands::Apply { ref source, .. } |
-        Commands::Run { ref source, .. } |
-        Commands::Doctor { ref source } => {
+        Commands::Apply { ref source, .. }
+        | Commands::Run { ref source, .. }
+        | Commands::Doctor { ref source } => {
             let toml_str = fetch_toml_content(source)?;
             toml::from_str(&toml_str)
                 .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
