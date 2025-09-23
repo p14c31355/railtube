@@ -216,7 +216,7 @@ fn is_cargo_package_installed(pkg_name: &str) -> Result<bool, String> {
             // A simple check for the package name followed by a space or newline should suffice.
             Ok(stdout
                 .lines()
-                .any(|line| line.starts_with(&format!("{} ", pkg_name))))
+                .any(|line| line.split_whitespace().next() == Some(pkg_name)))
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
