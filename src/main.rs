@@ -116,6 +116,7 @@ enum Commands {
 
 // Function to log messages to a file
 fn log_message(message: &str) -> Result<(), std::io::Error> {
+    const LOG_FILE: &str = "railtube.log";
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
