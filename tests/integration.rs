@@ -79,9 +79,9 @@ fn test_export_generates_toml() {
         .arg("run")
         .arg("--")
         .arg("export")
-        .arg("--output")
-        .arg(TEST_FILE)
-        .output()
+    .arg("--output")
+    .arg(test_file.to_str().unwrap())
+    .output()
         .expect("failed to execute process");
 
     assert!(
@@ -91,7 +91,7 @@ fn test_export_generates_toml() {
     );
 
     // Check if file was created and has content
-    let content = std::fs::read_to_string(TEST_FILE).expect("Failed to read exported file");
+    let content = std::fs::read_to_string(test_file.to_str().unwrap()).expect("Failed to read exported file");
     assert!(
         content.contains("[apt]"),
         "Exported TOML should have [apt] section"
