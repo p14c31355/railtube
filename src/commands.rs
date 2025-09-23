@@ -366,13 +366,14 @@ fn check_section_discrepancies<F, P>(
                     .map(String::as_str)
                     .collect::<HashSet<_>>();
                 let mut stdout = io::stdout().lock();
-                check_package_discrepancies(
+                if let Err(e) = check_package_discrepancies(
                     &mut stdout,
                     manager_name,
                     &toml_packages,
                     &installed_packages_set,
-                )
-                .expect("Failed to write to stdout");
+                ) {
+                    eprintln!("Warning: Failed to write to stdout: {}", e);
+                }
             }
             Err(e) => {
                 eprintln!(
@@ -419,11 +420,8 @@ mod tests {
 
     #[test]
     fn test_check_package_discrepancies_missing_and_extra() {
-        let mut toml_packages = HashSet::new();
-        toml_packages.insert("missing_pkg");
-
-        let mut installed_packages = HashSet::new();
-        installed_packages.insert("extra_pkg");
+        let toml_packages = HashSet::from(["missing_pkg"]);
+        let installed_packages = HashSet::from(["extra_pkg"]);
 
         let mut output = Vec::new();
         check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
@@ -435,11 +433,8 @@ mod tests {
 
     #[test]
     fn test_check_package_discrepancies_no_discrepancies() {
-        let mut toml_packages = HashSet::new();
-        toml_packages.insert("common_pkg");
-
-        let mut installed_packages = HashSet::new();
-        installed_packages.insert("common_pkg");
+        let toml_packages = HashSet::from(["common_pkg"]);
+        let installed_packages = HashSet::from(["common_pkg"]);
 
         let mut output = Vec::new();
         check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
