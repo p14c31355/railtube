@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize}; // Added Serialize
+use thiserror::Error;
 use std::{
     collections::HashMap,
     fs,
@@ -44,68 +45,18 @@ impl std::fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 enum AppError {
-    Command(CommandError),
-    Io(std::io::Error),
-    Fetch(reqwest::Error),
-    TomlDe(toml::de::Error),
-    // Add other error types as needed
-    Other(Box<dyn std::error::Error + Send + Sync>),
-}
-
-impl std::fmt::Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AppError::Command(err) => write!(f, "Command Error: {}", err),
-            AppError::Io(err) => write!(f, "IO Error: {}", err),
-            AppError::Fetch(err) => write!(f, "Fetch Error: {}", err),
-            AppError::TomlDe(err) => write!(f, "TOML Deserialization Error: {}", err),
-            AppError::Other(err) => write!(f, "Other Error: {}", err),
-        }
-    }
-}
-
-impl std::error::Error for AppError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            AppError::Command(err) => Some(err),
-            AppError::Io(err) => Some(err),
-            AppError::Fetch(err) => Some(err),
-            AppError::TomlDe(err) => Some(err),
-            AppError::Other(err) => Some(err.as_ref()),
-        }
-    }
-}
-
-impl From<CommandError> for AppError {
-    fn from(err: CommandError) -> Self {
-        AppError::Command(err)
-    }
-}
-
-impl From<std::io::Error> for AppError {
-    fn from(err: std::io::Error) -> Self {
-        AppError::Io(err)
-    }
-}
-
-impl From<reqwest::Error> for AppError {
-    fn from(err: reqwest::Error) -> Self {
-        AppError::Fetch(err)
-    }
-}
-
-impl From<toml::de::Error> for AppError {
-    fn from(err: toml::de::Error) -> Self {
-        AppError::TomlDe(err)
-    }
-}
-
-impl From<Box<dyn std::error::Error + Send + Sync>> for AppError {
-    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
-        AppError::Other(err)
-    }
+    #[error("Command Error: {0}")]
+    Command(#[from] CommandError),
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Fetch Error: {0}")]
+    Fetch(#[from] reqwest::Error),
+    #[error("TOML Deserialization Error: {0}")]
+    TomlDe(#[from] toml::de::Error),
+    #[error("Other Error: {0}")]
+    Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Debug, Deserialize, Serialize)] // Added Serialize
@@ -520,257 +471,269 @@ fn apply_config(
     };
 
     // Handle system updates
-    if let Some(sys) = &config.system {
-        if sys.update {
-            if dry_run {
-                println!("Would run: sudo apt update");
-            } else {
-                run_command("sudo", &["apt", "update"])?;
+    if should_process("system") {
+        if let Some(sys) = &config.system {
+            if sys.update {
+                if dry_run {
+                    println!("Would run: sudo apt update");
+                } else {
+                    run_command("sudo", &["apt", "update"])?;
+                }
             }
         }
     }
 
     // Execute APT commands
-    if let Some(apt) = &config.apt {
-        // APT package installation is not easily parallelized due to sudo and potential dependencies.
-        // We process them sequentially for now.
-        for pkg_spec in &apt.list {
-            let mut pkg_name = pkg_spec.as_str();
-            let mut desired_version: Option<String> = None;
+    if should_process("apt") {
+        if let Some(apt) = &config.apt {
+            // APT package installation is not easily parallelized due to sudo and potential dependencies.
+            // We process them sequentially for now.
+            for pkg_spec in &apt.list {
+                let mut pkg_name = pkg_spec.as_str();
+                let mut desired_version: Option<String> = None;
 
-            // Check if a specific version is requested
-            if let Some((name, version)) = pkg_spec.split_once('=') {
-                pkg_name = name;
-                desired_version = Some(version.to_string());
-            }
+                // Check if a specific version is requested
+                if let Some((name, version)) = pkg_spec.split_once('=') {
+                    pkg_name = name;
+                    desired_version = Some(version.to_string());
+                }
 
-            // Check if package is already installed
-            let is_installed = Command::new("dpkg")
-                .arg("-s")
-                .arg(pkg_name)
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+                // Check if package is already installed
+                let is_installed = Command::new("dpkg")
+                    .arg("-s")
+                    .arg(pkg_name)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
 
-            if is_installed {
-                if let Some(version_to_match) = &desired_version {
-                    match get_installed_apt_version(pkg_name) {
-                        Ok(Some(installed_version)) => {
-                            if installed_version == *version_to_match {
-                                println!(
-                                    "APT package '{}' version '{}' already installed, skipping.",
-                                    pkg_name, installed_version
-                                );
-                                continue; // Skip installation if version matches
-                            } else {
-                                println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
+                if is_installed {
+                    if let Some(version_to_match) = &desired_version {
+                        match get_installed_apt_version(pkg_name) {
+                            Ok(Some(installed_version)) => {
+                                if installed_version == *version_to_match {
+                                    println!(
+                                        "APT package '{}' version '{}' already installed, skipping.",
+                                        pkg_name, installed_version
+                                    );
+                                    continue; // Skip installation if version matches
+                                } else {
+                                    println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
+                                    // Proceed to installation
+                                }
+                            }
+                            Ok(None) => {
+                                // This case should ideally not happen if is_installed is true, but handle defensively.
+                                eprintln!("Warning: APT package '{}' reported as installed but version query failed. Proceeding with installation.", pkg_name);
+                                // Proceed to installation
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Error checking installed APT version for '{}': {}. Proceeding with installation.", pkg_name, e);
                                 // Proceed to installation
                             }
                         }
-                        Ok(None) => {
-                            // This case should ideally not happen if is_installed is true, but handle defensively.
-                            eprintln!("Warning: APT package '{}' reported as installed but version query failed. Proceeding with installation.", pkg_name);
-                            // Proceed to installation
-                        }
-                        Err(e) => {
-                            eprintln!("Warning: Error checking installed APT version for '{}': {}. Proceeding with installation.", pkg_name, e);
-                            // Proceed to installation
-                        }
+                    } else {
+                        // No version specified, and package is installed. Skip.
+                        println!("APT package '{}' already installed, skipping.", pkg_name);
+                        continue;
                     }
                 } else {
-                    // No version specified, and package is installed. Skip.
-                    println!("APT package '{}' already installed, skipping.", pkg_name);
-                    continue;
+                    // Package is not installed.
+                    if desired_version.is_some() {
+                        println!(
+                            "APT package '{}' version '{}' not installed. Installing.",
+                            pkg_name,
+                            desired_version.as_ref().unwrap()
+                        );
+                    } else {
+                        println!("APT package '{}' not installed. Installing.", pkg_name);
+                    }
+                    // Proceed to installation
                 }
-            } else {
-                // Package is not installed.
-                if desired_version.is_some() {
-                    println!(
-                        "APT package '{}' version '{}' not installed. Installing.",
-                        pkg_name,
-                        desired_version.as_ref().unwrap()
-                    );
+
+                // If we reach here, installation is needed.
+                let action_desc = format!("Installing APT package '{}'", pkg_spec);
+                log_or_eprint(&action_desc, "Failed to log message");
+                println!("{}", action_desc);
+
+                if dry_run {
+                    println!("Would run: sudo apt install -y {}", pkg_spec);
                 } else {
-                    println!("APT package '{}' not installed. Installing.", pkg_name);
+                    if !yes
+                        && !confirm_installation(&format!("Do you want to install '{}'?", pkg_spec))?
+                    {
+                        println!("Installation aborted by user.");
+                        continue; // Skip this package
+                    }
+                    run_command("sudo", &["apt", "install", "-y", pkg_spec])?;
                 }
-                // Proceed to installation
-            }
-
-            // If we reach here, installation is needed.
-            let action_desc = format!("Installing APT package '{}'", pkg_spec);
-            log_or_eprint(&action_desc, "Failed to log message");
-            println!("{}", action_desc);
-
-            if dry_run {
-                println!("Would run: sudo apt install -y {}", pkg_spec);
-            } else {
-                if !yes
-                    && !confirm_installation(&format!("Do you want to install '{}'?", pkg_spec))?
-                {
-                    println!("Installation aborted by user.");
-                    continue; // Skip this package
-                }
-                run_command("sudo", &["apt", "install", "-y", pkg_spec])?;
             }
         }
     }
 
     // Execute Snap commands
-    if let Some(snap) = &config.snap {
-        if dry_run {
-            // For dry run, process sequentially for better readability
-            for pkg in &snap.list {
-                let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
-                if !is_snap_package_installed(pkg_name) {
-                    let command_str = format!("sudo snap install {}", pkg);
-                    println!("Would run: {}", command_str);
-                } else {
-                    println!("Snap package '{}' already installed, skipping.", pkg_name);
-                }
-            }
-        } else {
-            // When user confirmation is required, the installation loop for these packages must be sequential.
-            if !yes {
+    if should_process("snap") {
+        if let Some(snap) = &config.snap {
+            if dry_run {
+                // For dry run, process sequentially for better readability
                 for pkg in &snap.list {
                     let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
                     if !is_snap_package_installed(pkg_name) {
-                        if confirm_installation(&format!(
-                            "Do you want to install snap package '{}'?",
-                            pkg
-                        ))? {
-                            run_command("sudo", &["snap", "install", pkg])?;
-                        } else {
-                            println!("Installation aborted by user.");
-                        }
+                        let command_str = format!("sudo snap install {}", pkg);
+                        println!("Would run: {}", command_str);
                     } else {
                         println!("Snap package '{}' already installed, skipping.", pkg_name);
                     }
                 }
             } else {
-                // Parallel execution for actual installation
-                let result: Result<(), AppError> = snap.list.par_iter().try_for_each(|pkg| {
-                    let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
-                    if !is_snap_package_installed(pkg_name) {
-                        run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
-                    } else {
-                        println!("Snap package '{}' already installed, skipping.", pkg_name);
-                        Ok(())
+                // When user confirmation is required, the installation loop for these packages must be sequential.
+                if !yes {
+                    for pkg in &snap.list {
+                        let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
+                        if !is_snap_package_installed(pkg_name) {
+                            if confirm_installation(&format!(
+                                "Do you want to install snap package '{}'?",
+                                pkg
+                            ))? {
+                                run_command("sudo", &["snap", "install", pkg])?;
+                            } else {
+                                println!("Installation aborted by user.");
+                            }
+                        } else {
+                            println!("Snap package '{}' already installed, skipping.", pkg_name);
+                        }
                     }
-                });
-                result?;
+                } else {
+                    // Parallel execution for actual installation
+                    let result: Result<(), AppError> = snap.list.par_iter().try_for_each(|pkg| {
+                        let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
+                        if !is_snap_package_installed(pkg_name) {
+                            run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
+                        } else {
+                            println!("Snap package '{}' already installed, skipping.", pkg_name);
+                            Ok(())
+                        }
+                    });
+                    result?;
+                }
             }
         }
     }
 
     // Execute Flatpak commands
-    if let Some(flatpak) = &config.flatpak {
-        if dry_run {
-            // For dry run, process sequentially for better readability
-            for pkg in &flatpak.list {
-                if !is_flatpak_package_installed(pkg) {
-                    let command_str = format!("flatpak install -y {}", pkg);
-                    println!("Would run: {}", command_str);
-                } else {
-                    println!("Flatpak package '{}' already installed, skipping.", pkg);
-                }
-            }
-        } else {
-            // When user confirmation is required, the installation loop for these packages must be sequential.
-            if !yes {
+    if should_process("flatpak") {
+        if let Some(flatpak) = &config.flatpak {
+            if dry_run {
+                // For dry run, process sequentially for better readability
                 for pkg in &flatpak.list {
                     if !is_flatpak_package_installed(pkg) {
-                        if confirm_installation(&format!(
-                            "Do you want to install flatpak package '{}'?",
-                            pkg
-                        ))? {
-                            run_command("flatpak", &["install", "-y", pkg])?;
-                        } else {
-                            println!("Installation aborted by user.");
-                        }
+                        let command_str = format!("flatpak install -y {}", pkg);
+                        println!("Would run: {}", command_str);
                     } else {
                         println!("Flatpak package '{}' already installed, skipping.", pkg);
                     }
                 }
             } else {
-                // Parallel execution for actual installation
-                let result: Result<(), AppError> = flatpak.list.par_iter().try_for_each(|pkg| {
-                    if !is_flatpak_package_installed(pkg) {
-                        run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
-                    } else {
-                        println!("Flatpak package '{}' already installed, skipping.", pkg);
-                        Ok(())
+                // When user confirmation is required, the installation loop for these packages must be sequential.
+                if !yes {
+                    for pkg in &flatpak.list {
+                        if !is_flatpak_package_installed(pkg) {
+                            if confirm_installation(&format!(
+                                "Do you want to install flatpak package '{}'?",
+                                pkg
+                            ))? {
+                                run_command("flatpak", &["install", "-y", pkg])?;
+                            } else {
+                                println!("Installation aborted by user.");
+                            }
+                        } else {
+                            println!("Flatpak package '{}' already installed, skipping.", pkg);
+                        }
                     }
-                });
-                result?;
+                } else {
+                    // Parallel execution for actual installation
+                    let result: Result<(), AppError> = flatpak.list.par_iter().try_for_each(|pkg| {
+                        if !is_flatpak_package_installed(pkg) {
+                            run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
+                        } else {
+                            println!("Flatpak package '{}' already installed, skipping.", pkg);
+                            Ok(())
+                        }
+                    });
+                    result?;
+                }
             }
         }
     }
 
     // Execute Cargo install commands in parallel, propagating errors
-    if let Some(cargo) = &config.cargo {
-        let result: Result<(), AppError> = cargo.list.par_iter().try_for_each(|pkg| {
-            if !is_cargo_package_installed(pkg) {
-                // Use the improved check
-                let command_str = format!("cargo install {}", pkg);
-                if dry_run {
-                    println!("Would run: {}", command_str);
-                    Ok(()) // In dry run, always succeed
+    if should_process("cargo") {
+        if let Some(cargo) = &config.cargo {
+            let result: Result<(), AppError> = cargo.list.par_iter().try_for_each(|pkg| {
+                if !is_cargo_package_installed(pkg) {
+                    // Use the improved check
+                    let command_str = format!("cargo install {}", pkg);
+                    if dry_run {
+                        println!("Would run: {}", command_str);
+                        Ok(()) // In dry run, always succeed
+                    } else {
+                        // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
+                        run_command("cargo", &["install", "--locked", "--force", pkg])
+                            .map_err(AppError::Command)
+                    }
                 } else {
-                    // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
-                    run_command("cargo", &["install", "--locked", "--force", pkg])
-                        .map_err(AppError::Command)
+                    println!("Cargo package '{}' already installed, skipping.", pkg);
+                    Ok(())
                 }
-            } else {
-                println!("Cargo package '{}' already installed, skipping.", pkg);
-                Ok(())
-            }
-        });
-        result?;
+            });
+            result?;
+        }
     }
 
     // Handle .deb files
-    if let Some(deb) = &config.deb {
-        let temp_dir = tempdir()?;
-        let client = Client::new(); // Client created here, outside the loop
-        for url in &deb.urls {
-            let filename = url.split('/').next_back().unwrap_or("package.deb");
-            let temp_path = temp_dir.path().join(filename);
+    if should_process("deb") {
+        if let Some(deb) = &config.deb {
+            let temp_dir = tempdir()?;
+            let client = Client::new(); // Client created here, outside the loop
+            for url in &deb.urls {
+                let filename = url.split('/').next_back().unwrap_or("package.deb");
+                let temp_path = temp_dir.path().join(filename);
 
-            println!("Downloading {} to {}", url, temp_path.display());
-            let mut response = client.get(url).send()?;
-            if !response.status().is_success() {
-                return Err(AppError::Other(
-                    format!("Failed to download {}: {}", url, response.status()).into(),
-                ));
-            }
-            let mut file = fs::File::create(&temp_path)?;
-            response.copy_to(&mut file)?;
-
-            println!("Installing {}...", temp_path.display());
-            if dry_run {
-                println!("Would run: sudo dpkg -i {}", temp_path.display());
-                println!("Would run: sudo apt --fix-broken install -y");
-            } else {
-                if !yes
-                    && !confirm_installation(&format!(
-                        "Do you want to install deb package '{}'?",
-                        url
-                    ))?
-                {
-                    println!("Installation aborted by user.");
-                    continue; // Skip this package
+                println!("Downloading {} to {}", url, temp_path.display());
+                let mut response = client.get(url).send()?;
+                if !response.status().is_success() {
+                    return Err(AppError::Other(
+                        format!("Failed to download {}: {}", url, response.status()).into(),
+                    ));
                 }
-                run_command(
-                    "sudo",
-                    &[
-                        "dpkg",
-                        "-i",
-                        temp_path
-                            .to_str()
-                            .ok_or(AppError::Other("Temporary path is not valid UTF-8".into()))?,
-                    ],
-                )?;
-                run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
+                let mut file = fs::File::create(&temp_path)?;
+                response.copy_to(&mut file)?;
+
+                println!("Installing {}...", temp_path.display());
+                if dry_run {
+                    println!("Would run: sudo dpkg -i {}", temp_path.display());
+                    println!("Would run: sudo apt --fix-broken install -y");
+                } else {
+                    if !yes
+                        && !confirm_installation(&format!(
+                            "Do you want to install deb package '{}'?",
+                            url
+                        ))?
+                    {
+                        println!("Installation aborted by user.");
+                        continue; // Skip this package
+                    }
+                    run_command(
+                        "sudo",
+                        &[
+                            "dpkg",
+                            "-i",
+                            temp_path
+                                .to_str()
+                                .ok_or(AppError::Other("Temporary path is not valid UTF-8".into()))?,
+                        ],
+                    )?;
+                    run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
+                }
             }
         }
     }
