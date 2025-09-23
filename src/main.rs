@@ -9,6 +9,8 @@ use std::{
     io::{Read, Write},
     process::Command,
 };
+
+use dirs;
 use tempfile::tempdir;
 use thiserror::Error;
 
@@ -228,24 +230,15 @@ fn fetch_toml_content(source: &str) -> Result<String, AppError> {
     }
 }
 
-// Helper to check if a Cargo package is installed
 fn is_cargo_package_installed(pkg_name: &str) -> bool {
-    let cargo_bin_path = match std::env::var("CARGO_HOME") {
-        Ok(val) => std::path::PathBuf::from(val).join("bin"),
-        Err(_) => {
-            // Fallback if CARGO_HOME is not set or dirs::home_dir() fails.
-            // This fallback is a bit simplistic and might not work on all systems.
-            // A more robust solution would involve better error handling or a different crate.
-            dirs::home_dir()
-                .map(|home| home.join(".cargo").join("bin"))
-                .unwrap_or_else(|| {
-                    // If home_dir() also fails, we can't reliably find cargo bin.
-                    // Log a warning and proceed to the fallback check.
-                    eprintln!("Warning: Could not determine CARGO_HOME or home directory. Proceeding with 'cargo install --list' fallback.");
-                    std::path::PathBuf::new() // Return an empty path, which will likely fail exists() check
-                })
-        }
-    };
+    let cargo_bin_path = dirs::home_dir()
+        .map(|home| home.join(".cargo").join("bin"))
+        .unwrap_or_else(|| {
+            // If home_dir() fails, we can't reliably find cargo bin.
+            // Log a warning and proceed to the fallback check.
+            eprintln!("Warning: Could not determine home directory. Proceeding with 'cargo install --list' fallback.");
+            std::path::PathBuf::new() // Return an empty path, which will likely fail exists() check
+        });
 
     // Check if the executable exists in the determined cargo bin path
     if !cargo_bin_path.as_os_str().is_empty() {
@@ -357,6 +350,8 @@ fn get_installed_apt_version(pkg_name: &str) -> Result<Option<String>, AppError>
 
     if !output.status.success() {
         // Package not found or other error
+        // Note: This relies on the specific stderr message "no packages found" from dpkg-query,
+        // which may be brittle across versions or locales.
         if String::from_utf8_lossy(&output.stderr).contains("no packages found") {
             return Ok(None); // Package not installed
         }
@@ -625,47 +620,47 @@ fn apply_config(
     // Execute Flatpak commands
     if should_process("flatpak") {
         if let Some(flatpak) = &config.flatpak {
-            if dry_run {
-                // For dry run, process sequentially for better readability
-                for pkg in &flatpak.list {
+            let packages_to_install: Vec<_> = flatpak
+                .list
+                .iter()
+                .filter(|pkg| {
                     if !is_flatpak_package_installed(pkg) {
-                        let command_str = format!("flatpak install -y {}", pkg);
-                        println!("Would run: {}", command_str);
+                        true
                     } else {
                         println!("Flatpak package '{}' already installed, skipping.", pkg);
+                        false
+                    }
+                })
+                .collect();
+
+            if packages_to_install.is_empty() {
+                return Ok(());
+            }
+
+            if dry_run {
+                for pkg in packages_to_install {
+                    println!("Would run: flatpak install -y {}", pkg);
+                }
+                return Ok(());
+            }
+
+            if !yes {
+                // Sequential confirmation
+                for pkg in &packages_to_install {
+                    if confirm_installation(&format!(
+                        "Do you want to install flatpak package '{}'?",
+                        pkg
+                    ))? {
+                        run_command("flatpak", &["install", "-y", pkg])?;
+                    } else {
+                        println!("Installation aborted by user.");
                     }
                 }
             } else {
-                // When user confirmation is required, the installation loop for these packages must be sequential.
-                if !yes {
-                    for pkg in &flatpak.list {
-                        if !is_flatpak_package_installed(pkg) {
-                            if confirm_installation(&format!(
-                                "Do you want to install flatpak package '{}'?",
-                                pkg
-                            ))? {
-                                run_command("flatpak", &["install", "-y", pkg])?;
-                            } else {
-                                println!("Installation aborted by user.");
-                            }
-                        } else {
-                            println!("Flatpak package '{}' already installed, skipping.", pkg);
-                        }
-                    }
-                } else {
-                    // Parallel execution for actual installation
-                    let result: Result<(), AppError> =
-                        flatpak.list.par_iter().try_for_each(|pkg| {
-                            if !is_flatpak_package_installed(pkg) {
-                                run_command("flatpak", &["install", "-y", pkg])
-                                    .map_err(AppError::Command)
-                            } else {
-                                println!("Flatpak package '{}' already installed, skipping.", pkg);
-                                Ok(())
-                            }
-                        });
-                    result?;
-                }
+                // Parallel installation
+                packages_to_install.par_iter().try_for_each(|pkg| {
+                    run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
+                })?;
             }
         }
     }
@@ -857,7 +852,7 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
         let toml_packages = apt_section
             .list
             .iter()
-            .map(|pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec))
+            .map(|pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec.as_str()))
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_apt_packages()?;
         let installed_packages_set = installed_packages
@@ -872,12 +867,12 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
         let toml_packages = snap_section
             .list
             .iter()
-            .map(String::as_str) // Convert &String to &str for HashSet comparison
+            .map(|pkg| pkg.split_whitespace().next().unwrap_or(pkg.as_str()))
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_snap_packages()?;
         let installed_packages_set = installed_packages
             .iter()
-            .map(String::as_str) // Convert &String to &str for HashSet comparison
+            .map(String::as_str)
             .collect::<std::collections::HashSet<_>>();
         check_package_discrepancies("Snap", &toml_packages, &installed_packages_set);
     }
@@ -902,12 +897,12 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
         let toml_packages = cargo_section
             .list
             .iter()
-            .map(String::as_str) // Convert &String to &str for HashSet comparison
+            .map(|pkg| pkg.split('=').next().unwrap_or(pkg.as_str()))
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_cargo_packages()?;
         let installed_packages_set = installed_packages
             .iter()
-            .map(String::as_str) // Convert &String to &str for HashSet comparison
+            .map(String::as_str)
             .collect::<std::collections::HashSet<_>>();
         check_package_discrepancies("Cargo", &toml_packages, &installed_packages_set);
     }
