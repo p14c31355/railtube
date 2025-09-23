@@ -573,48 +573,48 @@ fn apply_config(
     // Execute Snap commands
     if should_process("snap") {
         if let Some(snap) = &config.snap {
-            if dry_run {
-                // For dry run, process sequentially for better readability
-                for pkg in &snap.list {
-                    let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
+            let packages_to_install: Vec<_> = snap
+                .list
+                .iter()
+                .filter(|pkg| {
+                    let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg);
                     if !is_snap_package_installed(pkg_name) {
-                        let command_str = format!("sudo snap install {}", pkg);
-                        println!("Would run: {}", command_str);
+                        true
                     } else {
                         println!("Snap package '{}' already installed, skipping.", pkg_name);
+                        false
+                    }
+                })
+                .collect();
+
+            if packages_to_install.is_empty() {
+                return Ok(());
+            }
+
+            if dry_run {
+                for pkg in packages_to_install {
+                    println!("Would run: sudo snap install {}", pkg);
+                }
+                return Ok(());
+            }
+
+            if !yes {
+                // Sequential confirmation
+                for pkg in &packages_to_install {
+                    if confirm_installation(&format!(
+                        "Do you want to install snap package '{}'?",
+                        pkg
+                    ))? {
+                        run_command("sudo", &["snap", "install", pkg])?;
+                    } else {
+                        println!("Installation aborted by user.");
                     }
                 }
             } else {
-                // When user confirmation is required, the installation loop for these packages must be sequential.
-                if !yes {
-                    for pkg in &snap.list {
-                        let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
-                        if !is_snap_package_installed(pkg_name) {
-                            if confirm_installation(&format!(
-                                "Do you want to install snap package '{}'?",
-                                pkg
-                            ))? {
-                                run_command("sudo", &["snap", "install", pkg])?;
-                            } else {
-                                println!("Installation aborted by user.");
-                            }
-                        } else {
-                            println!("Snap package '{}' already installed, skipping.", pkg_name);
-                        }
-                    }
-                } else {
-                    // Parallel execution for actual installation
-                    let result: Result<(), AppError> = snap.list.par_iter().try_for_each(|pkg| {
-                        let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
-                        if !is_snap_package_installed(pkg_name) {
-                            run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
-                        } else {
-                            println!("Snap package '{}' already installed, skipping.", pkg_name);
-                            Ok(())
-                        }
-                    });
-                    result?;
-                }
+                // Parallel installation
+                packages_to_install
+                    .par_iter()
+                    .try_for_each(|pkg| run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command))?;
             }
         }
     }
@@ -668,24 +668,34 @@ fn apply_config(
     // Execute Cargo install commands in parallel, propagating errors
     if should_process("cargo") {
         if let Some(cargo) = &config.cargo {
-            let result: Result<(), AppError> = cargo.list.par_iter().try_for_each(|pkg| {
-                if !is_cargo_package_installed(pkg) {
-                    // Use the improved check
-                    let command_str = format!("cargo install {}", pkg);
-                    if dry_run {
-                        println!("Would run: {}", command_str);
-                        Ok(()) // In dry run, always succeed
+            let packages_to_install: Vec<_> = cargo
+                .list
+                .iter()
+                .filter(|pkg| {
+                    if !is_cargo_package_installed(pkg) {
+                        true
                     } else {
-                        // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
-                        run_command("cargo", &["install", "--locked", "--force", pkg])
-                            .map_err(AppError::Command)
+                        println!("Cargo package '{}' already installed, skipping.", pkg);
+                        false
                     }
-                } else {
-                    println!("Cargo package '{}' already installed, skipping.", pkg);
-                    Ok(())
+                })
+                .collect();
+
+            if packages_to_install.is_empty() {
+                return Ok(());
+            }
+
+            if dry_run {
+                for pkg in packages_to_install {
+                    println!("Would run: cargo install --locked --force {}", pkg);
                 }
-            });
-            result?;
+                return Ok(());
+            }
+
+            // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
+            packages_to_install
+                .par_iter()
+                .try_for_each(|pkg| run_command("cargo", &["install", "--locked", "--force", pkg]).map_err(AppError::Command))?;
         }
     }
 
