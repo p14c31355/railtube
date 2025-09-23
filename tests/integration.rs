@@ -58,43 +58,18 @@ fn test_export_generates_toml() {
     let test_file = temp_dir.path().join("test_export.toml");
 
     // Check prerequisites
-    let mut prerequisites_met = true;
+    let prerequisites = [
+        ("dpkg-query", &["-W", "-f=${Package}\n"] as &[&str], "APT"),
+        ("snap", &["list"], "Snap"),
+        ("flatpak", &["list"], "Flatpak"),
+        ("cargo", &["install", "--list"], "Cargo"),
+    ];
 
-    // Check dpkg-query for APT
-    if let Err(e) = std::process::Command::new("dpkg-query")
-        .arg("-W")
-        .arg("-f=${Package}\\n")
-        .status()
-    {
-        eprintln!("APT prerequisite failed: {}", e);
-        prerequisites_met = false;
-    }
-
-    // Check snap list
-    if let Err(e) = std::process::Command::new("snap").arg("list").status() {
-        eprintln!("Snap prerequisite failed: {}", e);
-        prerequisites_met = false;
-    }
-
-    // Check flatpak list
-    if let Err(e) = std::process::Command::new("flatpak").arg("list").status() {
-        eprintln!("Flatpak prerequisite failed: {}", e);
-        prerequisites_met = false;
-    }
-
-    // Check cargo install --list
-    if let Err(e) = std::process::Command::new("cargo")
-        .arg("install")
-        .arg("--list")
-        .status()
-    {
-        eprintln!("Cargo prerequisite failed: {}", e);
-        prerequisites_met = false;
-    }
-
-    if !prerequisites_met {
-        eprintln!("Skipping export test due to missing prerequisites in test environment.");
-        return;
+    for (command, args, name) in &prerequisites {
+        if let Err(e) = std::process::Command::new(command).args(*args).status() {
+            eprintln!("{} prerequisite check failed: {}. Skipping export test.", name, e);
+            return;
+        }
     }
 
     let output = Command::new("cargo")
