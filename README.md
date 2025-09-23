@@ -40,15 +40,19 @@ Inspired by the desire for a unified and reproducible environment setup, Railtub
 
 ## Usage
 
-Railtube provides two main subcommands: `apply` and `run`.
+Railtube provides four subcommands: `apply`, `run`, `doctor`, and `export`.
 
 ### `railtube apply`
 
-Applies package installations defined in a TOML manifest.
+Applies package installations defined in a TOML manifest. Skips already installed packages (with optional version checking).
 
 ```bash
-railtube apply --source <path_or_url>
+railtube apply --source <path_or_url> [--dry-run] [--yes] [--only <sections>]
 ```
+
+- `--dry-run`: Show what would be installed without executing commands.
+- `--yes`: Skip confirmation prompts.
+- `--only <sections>`: Apply only specific sections (comma-separated, e.g., `apt,cargo`).
 
 ### `railtube run`
 
@@ -57,6 +61,28 @@ Executes a specific script defined in the `[scripts]` section of a TOML manifest
 ```bash
 railtube run --source <path_or_url> <script_name>
 ```
+
+### `railtube doctor`
+
+Checks for discrepancies between the packages listed in the TOML manifest and those currently installed on the system.
+
+```bash
+railtube doctor --source <path_or_url>
+```
+
+This command reports:
+- Packages in TOML but not installed (missing).
+- Installed packages not listed in TOML (extra).
+
+### `railtube export`
+
+Exports the current installed packages (from APT, Snap, Flatpak, Cargo) to a TOML manifest file. Note: Scripts and deb sections are not exported as they are declarative, not queryable from the system.
+
+```bash
+railtube export [--output <file>]
+```
+
+- `--output`: Path for the output TOML file (default: `exported-env.toml`).
 
 ### TOML Manifest Format
 
@@ -69,7 +95,7 @@ The TOML file defines different sections for various package managers and script
 [system]
 update = true
 
-# APT packages
+# APT packages (supports version pinning: "package=1.2.3")
 [apt]
 list = [
     "git",
@@ -144,4 +170,13 @@ update-all = "echo 'Updating all systems...' && sudo apt update && sudo apt upgr
 
 ## Contributing
 
-Contributions are welcome! Please refer to the contribution guidelines (if available) or open an issue/pull request.
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details. Contributions are welcome! Please open an issue or pull request on GitHub.
+
+## License
+
+This project is licensed under either of
+
+* Apache License, Version 2.0, ([LICENSE-APACHE](docs/LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+* MIT license ([LICENSE-MIT](docs/LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.

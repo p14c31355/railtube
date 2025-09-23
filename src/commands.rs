@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use reqwest::blocking::Client;
 use std::collections::HashSet;
 use std::ffi::OsStr;
+use std::io;
 use tempfile::tempdir;
 
 pub fn apply_config(
@@ -314,32 +315,43 @@ pub fn export_current_environment() -> Result<Config, AppError> {
     Ok(config)
 }
 
-pub fn check_package_discrepancies(
+pub fn check_package_discrepancies<W: std::io::Write>(
+    writer: &mut W,
     package_manager_name: &str,
     toml_packages: &HashSet<&str>,
     installed_packages: &HashSet<&str>,
-) {
-    let missing: Vec<_> = toml_packages.difference(installed_packages).collect();
+) -> std::io::Result<()> {
+    let missing: Vec<_> = toml_packages
+        .difference(installed_packages)
+        .copied()
+        .collect();
     if !missing.is_empty() {
-        println!(
+        writeln!(
+            writer,
             "\n{} packages listed in TOML but not installed:",
             package_manager_name
-        );
+        )?;
         for pkg in missing {
-            println!("- {}", pkg);
+            writeln!(writer, "- {}", pkg)?;
         }
     }
 
-    let extra: Vec<_> = installed_packages.difference(toml_packages).collect();
+    let extra: Vec<_> = installed_packages
+        .difference(toml_packages)
+        .copied()
+        .collect();
     if !extra.is_empty() {
-        println!(
+        writeln!(
+            writer,
             "\n{} packages installed but not listed in TOML:",
             package_manager_name
-        );
+        )?;
         for pkg in extra {
-            println!("- {}", pkg);
+            writeln!(writer, "- {}", pkg)?;
         }
     }
+
+    Ok(())
 }
 
 fn check_section_discrepancies<F, P>(
@@ -359,7 +371,15 @@ fn check_section_discrepancies<F, P>(
                     .iter()
                     .map(String::as_str)
                     .collect::<HashSet<_>>();
-                check_package_discrepancies(manager_name, &toml_packages, &installed_packages_set);
+                let mut stdout = io::stdout().lock();
+                if let Err(e) = check_package_discrepancies(
+                    &mut stdout,
+                    manager_name,
+                    &toml_packages,
+                    &installed_packages_set,
+                ) {
+                    eprintln!("Warning: Failed to write to stdout: {}", e);
+                }
             }
             Err(e) => {
                 eprintln!(
@@ -397,4 +417,35 @@ pub fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_check_package_discrepancies_missing_and_extra() {
+        let toml_packages = HashSet::from(["missing_pkg"]);
+        let installed_packages = HashSet::from(["extra_pkg"]);
+
+        let mut output = Vec::new();
+        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
+            .unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let expected = "\nTest packages listed in TOML but not installed:\n- missing_pkg\n\nTest packages installed but not listed in TOML:\n- extra_pkg\n";
+        assert_eq!(output_str, expected);
+    }
+
+    #[test]
+    fn test_check_package_discrepancies_no_discrepancies() {
+        let toml_packages = HashSet::from(["common_pkg"]);
+        let installed_packages = HashSet::from(["common_pkg"]);
+
+        let mut output = Vec::new();
+        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
+            .unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.trim().is_empty());
+    }
 }

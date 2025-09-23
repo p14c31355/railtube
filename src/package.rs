@@ -214,3 +214,52 @@ pub fn determine_package_installation(
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_determine_install_not_installed_no_version() {
+        let result = determine_package_installation("testpkg", &None, None, "Test");
+        assert!(result);
+    }
+
+    #[test]
+    fn test_determine_install_not_installed_with_version() {
+        let result =
+            determine_package_installation("testpkg", &Some("1.0".to_string()), None, "Test");
+        assert!(result);
+    }
+
+    #[test]
+    fn test_determine_skip_installed_no_desired() {
+        let installed = "1.0".to_string();
+        let result = determine_package_installation("testpkg", &None, Some(&installed), "Test");
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_determine_skip_installed_matching_version() {
+        let installed = "1.0".to_string();
+        let result = determine_package_installation(
+            "testpkg",
+            &Some("1.0".to_string()),
+            Some(&installed),
+            "Test",
+        );
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_determine_install_installed_mismatching_version() {
+        let installed = "1.0".to_string();
+        let result = determine_package_installation(
+            "testpkg",
+            &Some("2.0".to_string()),
+            Some(&installed),
+            "Test",
+        );
+        assert!(result);
+    }
+}
