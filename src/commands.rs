@@ -219,7 +219,10 @@ fn install_generic_packages(
             if !check_installed(pkg_name) {
                 true
             } else {
-                println!("{} package '{}' already installed, skipping.", manager_name, pkg_name);
+                println!(
+                    "{} package '{}' already installed, skipping.",
+                    manager_name, pkg_name
+                );
                 false
             }
         })
