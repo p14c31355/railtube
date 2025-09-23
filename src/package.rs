@@ -180,23 +180,24 @@ pub fn determine_package_installation(
     installed_version: Option<&String>,
     package_type: &str,
 ) -> bool {
-    let mut should_install = false;
-    if let Some(installed_version) = installed_version {
+        if let Some(installed_version) = installed_version {
         if let Some(version_to_match) = desired_version {
             if installed_version != version_to_match {
                 println!("{} package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", package_type, pkg_name, installed_version, version_to_match);
-                should_install = true;
+                return true;
             } else {
                 println!(
                     "{} package '{}' version '{}' already installed, skipping.",
                     package_type, pkg_name, installed_version
                 );
+                return false;
             }
         } else {
             println!(
                 "{} package '{}' already installed, skipping.",
                 package_type, pkg_name
             );
+            return false;
         }
     } else {
         if let Some(version) = desired_version {
@@ -210,7 +211,6 @@ pub fn determine_package_installation(
                 package_type, pkg_name
             );
         }
-        should_install = true;
+        true
     }
-    should_install
 }

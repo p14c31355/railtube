@@ -226,12 +226,10 @@ fn install_generic_packages(
         return Ok(());
     }
 
-    if !packages_to_install.is_empty() {
         println!(
-            "Will attempt to install the following {} packages: {:?}",
-            manager_name, packages_to_install
-        );
-    }
+        "Will attempt to install the following {} packages: {:?}",
+        manager_name, packages_to_install
+    );
 
     if dry_run {
         for pkg in &packages_to_install {
@@ -243,18 +241,16 @@ fn install_generic_packages(
                 "Do you want to install {} package '{}'?",
                 manager_name, pkg
             ))? {
-                let mut args: Vec<&str> = base_cmd[1..].to_vec();
-                args.push(pkg);
-                run_command(base_cmd[0], &args)?;
+                                let args = base_cmd[1..].iter().copied().chain(std::iter::once(*pkg));
+                run_command(base_cmd[0], args)?;
             } else {
                 println!("Installation aborted by user.");
             }
         }
     } else {
-        packages_to_install.par_iter().try_for_each(|pkg| {
-            let mut args: Vec<&str> = base_cmd[1..].to_vec();
-            args.push(pkg);
-            run_command(base_cmd[0], &args).map_err(AppError::Command)
+                packages_to_install.par_iter().try_for_each(|pkg| {
+            let args = base_cmd.iter().skip(1).copied().chain(std::iter::once(*pkg));
+            run_command(base_cmd[0], args).map_err(AppError::Command)
         })?;
     }
 
