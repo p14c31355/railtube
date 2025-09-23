@@ -213,9 +213,9 @@ fn is_cargo_package_installed(pkg_name: &str) -> bool {
             // The output format is typically "package_name vX.Y.Z"
             // We need to check if the package name exists in the output.
             // A simple check for the package name followed by a space or newline should suffice.
-            Ok(stdout
+            stdout
                 .lines()
-                .any(|line| line.split_whitespace().next() == Some(pkg_name)))
+                .any(|line| line.split_whitespace().next() == Some(pkg_name))
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
