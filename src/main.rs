@@ -200,34 +200,30 @@ fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>
 }
 
 // Helper to check if a Cargo package is installed
-fn is_cargo_package_installed(pkg_name: &str) -> Result<bool, String> {
-    // Changed return type to String for Send
+fn is_cargo_package_installed(pkg_name: &str) -> bool {
     let output = Command::new("cargo").arg("install").arg("--list").output();
 
     match output {
         Ok(output) => {
             if !output.status.success() {
                 eprintln!("Warning: Failed to list installed cargo packages. Assuming '{}' is not installed.", pkg_name);
-                return Ok(false);
+                return false;
             }
             let stdout = String::from_utf8_lossy(&output.stdout);
             // The output format is typically "package_name vX.Y.Z"
             // We need to check if the package name exists in the output.
             // A simple check for the package name followed by a space or newline should suffice.
-            Ok(stdout
-                .lines()
-                .any(|line| line.starts_with(&format!("{} ", pkg_name))))
+            stdout.lines().any(|line| line.starts_with(&format!("{} ", pkg_name)))
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
-            Ok(false)
+            false
         }
     }
 }
 
 // Helper to check if a Snap package is installed
-fn is_snap_package_installed(pkg_name: &str) -> Result<bool, String> {
-    // Changed return type to String for Send
+fn is_snap_package_installed(pkg_name: &str) -> bool {
     // Snap package names can sometimes have arguments like "code --classic".
     // We need to extract the base package name for the check.
     let base_pkg_name = pkg_name.split_whitespace().next().unwrap_or(pkg_name);
@@ -236,19 +232,19 @@ fn is_snap_package_installed(pkg_name: &str) -> Result<bool, String> {
     let output = Command::new("snap").arg("info").arg(base_pkg_name).output();
 
     match output {
-        Ok(output) => Ok(output.status.success()),
+        Ok(output) => output.status.success(),
         Err(e) => {
             eprintln!(
                 "Warning: Error executing 'snap info': {}. Assuming '{}' is not installed.",
                 e, base_pkg_name
             );
-            Ok(false)
+            false
         }
     }
 }
 
 // Helper to check if a Flatpak package is installed
-fn is_flatpak_package_installed(pkg_name: &str) -> Result<bool, String> {
+fn is_flatpak_package_installed(pkg_name: &str) -> bool {
     // Use `flatpak info` which is more direct and reliable.
     // It returns a success status code if the package is installed.
     let output = Command::new("flatpak")
@@ -257,13 +253,13 @@ fn is_flatpak_package_installed(pkg_name: &str) -> Result<bool, String> {
         .output();
 
     match output {
-        Ok(output) => Ok(output.status.success()),
+        Ok(output) => output.status.success(),
         Err(e) => {
             eprintln!(
                 "Warning: Error executing 'flatpak info': {}. Assuming '{}' is not installed.",
                 e, pkg_name
             );
-            Ok(false)
+            false
         }
     }
 }
