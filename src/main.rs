@@ -246,7 +246,7 @@ fn is_cargo_package_installed(pkg_name: &str) -> bool {
             // Improved check using grep-like logic: filter lines starting with "pkg " and check for pkg_name.
             stdout
                 .lines()
-                .any(|line| line.trim_start().starts_with(&format!("{} v", pkg_name)))
+                .any(|line| line.split_whitespace().next().map_or(false, |p| p.trim_end_matches(':') == pkg_name))
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
