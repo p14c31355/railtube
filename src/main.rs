@@ -10,7 +10,6 @@ use std::{
     process::Command,
 };
 
-use dirs;
 use tempfile::tempdir;
 use thiserror::Error;
 
