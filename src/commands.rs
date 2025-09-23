@@ -1,6 +1,6 @@
 use crate::config::{Config, Section, SystemSection};
 use crate::errors::AppError;
-use crate::package::{get_installed_cargo_version, *};
+use crate::package::*;
 use crate::utils::{confirm_installation, run_command};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
@@ -36,6 +36,13 @@ pub fn apply_config(
 
     if should_process("apt") {
         if let Some(apt) = &config.apt {
+            let apt_map = match crate::package::get_installed_apt_packages_map() {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("Warning: Error fetching APT packages map: {}. Proceeding with installation for all APT packages.", e);
+                    std::collections::HashMap::new()
+                }
+            };
             for pkg_spec in &apt.list {
                 let (pkg_name, desired_version) =
                     if let Some((name, version)) = pkg_spec.split_once('=') {
@@ -44,39 +51,7 @@ pub fn apply_config(
                         (pkg_spec.as_str(), None)
                     };
 
-                let mut should_install = false;
-                match get_installed_apt_version(pkg_name) {
-                    Ok(Some(installed_version)) => {
-                        if let Some(version_to_match) = &desired_version {
-                            if installed_version != *version_to_match {
-                                println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
-                                should_install = true;
-                            } else {
-                                println!(
-                                    "APT package '{}' version '{}' already installed, skipping.",
-                                    pkg_name, installed_version
-                                );
-                            }
-                        } else {
-                            println!("APT package '{}' already installed, skipping.", pkg_name);
-                        }
-                    }
-                    Ok(None) => {
-                        if let Some(version) = &desired_version {
-                            println!(
-                                "APT package '{}' version '{}' not installed. Installing.",
-                                pkg_name, version
-                            );
-                        } else {
-                            println!("APT package '{}' not installed. Installing.", pkg_name);
-                        }
-                        should_install = true;
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Error checking installed APT version for '{}': {}. Proceeding with installation.", pkg_name, e);
-                        should_install = true;
-                    }
-                }
+                let should_install = crate::package::determine_package_installation(pkg_name, &desired_version, apt_map.get(pkg_name), "APT");
 
                 if !should_install {
                     continue;
@@ -187,6 +162,13 @@ pub fn apply_config(
 
     if should_process("cargo") {
         if let Some(cargo) = &config.cargo {
+            let cargo_map = match crate::package::get_installed_cargo_packages_map() {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("Warning: Error fetching Cargo packages map: {}. Proceeding with installation for all Cargo packages.", e);
+                    std::collections::HashMap::new()
+                }
+            };
             for pkg_spec in &cargo.list {
                 let (pkg_name, desired_version) =
                     if let Some((name, version)) = pkg_spec.split_once('=') {
@@ -195,39 +177,7 @@ pub fn apply_config(
                         (pkg_spec.as_str(), None)
                     };
 
-                let mut should_install = false;
-                match get_installed_cargo_version(pkg_name) {
-                    Ok(Some(installed_version)) => {
-                        if let Some(version_to_match) = &desired_version {
-                            if installed_version != *version_to_match {
-                                println!("Cargo package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
-                                should_install = true;
-                            } else {
-                                println!(
-                                    "Cargo package '{}' version '{}' already installed, skipping.",
-                                    pkg_name, installed_version
-                                );
-                            }
-                        } else {
-                            println!("Cargo package '{}' already installed, skipping.", pkg_name);
-                        }
-                    }
-                    Ok(None) => {
-                        if let Some(version) = &desired_version {
-                            println!(
-                                "Cargo package '{}' version '{}' not installed. Installing.",
-                                pkg_name, version
-                            );
-                        } else {
-                            println!("Cargo package '{}' not installed. Installing.", pkg_name);
-                        }
-                        should_install = true;
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Error checking installed cargo version for '{}': {}. Proceeding with installation.", pkg_name, e);
-                        should_install = true;
-                    }
-                }
+                let should_install = crate::package::determine_package_installation(pkg_name, &desired_version, cargo_map.get(pkg_name), "Cargo");
 
                 if should_install {
                     if dry_run {
