@@ -398,3 +398,32 @@ pub fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_check_package_discrepancies_missing_and_extra() {
+        let mut toml_packages = HashSet::new();
+        toml_packages.insert("missing_pkg");
+
+        let mut installed_packages = HashSet::new();
+        installed_packages.insert("extra_pkg");
+
+        // Capture output if needed, but for basic test, just call to ensure no panic
+        check_package_discrepancies("Test", &toml_packages, &installed_packages);
+    }
+
+    #[test]
+    fn test_check_package_discrepancies_no_discrepancies() {
+        let mut toml_packages = HashSet::new();
+        toml_packages.insert("common_pkg");
+
+        let mut installed_packages = HashSet::new();
+        installed_packages.insert("common_pkg");
+
+        check_package_discrepancies("Test", &toml_packages, &installed_packages);
+    }
+}
