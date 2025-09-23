@@ -205,7 +205,11 @@ pub fn apply_config(
             let temp_dir = tempdir()?;
             let client = Client::new();
             for url in &deb.urls {
-                let filename = url.split('/').next_back().filter(|s| !s.is_empty()).unwrap_or("package.deb");
+                let filename = url
+                    .split('/')
+                    .next_back()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("package.deb");
                 let temp_path = temp_dir.path().join(filename);
 
                 println!("Downloading {} to {}", url, temp_path.display());
