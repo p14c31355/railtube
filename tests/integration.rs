@@ -54,8 +54,8 @@ list = ["fake-pkg"]
 
 #[test]
 fn test_export_generates_toml() {
-    const TEST_FILE: &str = "test_export.toml";
-    let _guard = FileGuard(TEST_FILE);
+    let temp_dir = TempDir::new().unwrap();
+    let test_file = temp_dir.path().join("test_export.toml");
 
     // Check prerequisites
     let mut prerequisites_met = true;
