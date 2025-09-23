@@ -213,7 +213,9 @@ fn is_cargo_package_installed(pkg_name: &str) -> bool {
             // The output format is typically "package_name vX.Y.Z"
             // We need to check if the package name exists in the output.
             // A simple check for the package name followed by a space or newline should suffice.
-            stdout.lines().any(|line| line.starts_with(&format!("{} ", pkg_name)))
+            Ok(stdout
+                .lines()
+                .any(|line| line.split_whitespace().next() == Some(pkg_name)))
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
@@ -247,10 +249,7 @@ fn is_snap_package_installed(pkg_name: &str) -> bool {
 fn is_flatpak_package_installed(pkg_name: &str) -> bool {
     // Use `flatpak info` which is more direct and reliable.
     // It returns a success status code if the package is installed.
-    let output = Command::new("flatpak")
-        .arg("info")
-        .arg(pkg_name)
-        .output();
+    let output = Command::new("flatpak").arg("info").arg(pkg_name).output();
 
     match output {
         Ok(output) => output.status.success(),
@@ -320,7 +319,7 @@ fn get_installed_snap_packages() -> Result<Vec<String>, Box<dyn std::error::Erro
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
+    for line in stdout.lines().skip(1) {
         // Example line: "Name Version Rev Tracking Publisher Notes"
         if let Some(pkg_name) = line.split_whitespace().next() {
             packages.push(pkg_name.to_string());
@@ -364,7 +363,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
     }
 
     // Execute APT commands
-        if let Some(apt) = &config.apt {
+    if let Some(apt) = &config.apt {
         // APT package installation is not easily parallelized due to sudo and potential dependencies.
         // We process them sequentially for now.
         for pkg_spec in &apt.list {
