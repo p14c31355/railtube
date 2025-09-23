@@ -294,11 +294,19 @@ fn get_installed_apt_packages() -> Result<Vec<String>, Box<dyn std::error::Error
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to list installed APT packages with dpkg-query: {}", stderr).into());
+        return Err(format!(
+            "Failed to list installed APT packages with dpkg-query: {}",
+            stderr
+        )
+        .into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+    Ok(stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
 }
 
 // Helper to get installed Cargo packages
@@ -357,7 +365,11 @@ fn get_installed_flatpak_packages() -> Result<Vec<String>, Box<dyn std::error::E
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Filter out empty lines and collect the application IDs
-    Ok(stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+    Ok(stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
 }
 
 fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
