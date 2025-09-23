@@ -251,10 +251,7 @@ fn is_snap_package_installed(pkg_name: &str) -> Result<bool, String> {
 fn is_flatpak_package_installed(pkg_name: &str) -> Result<bool, String> {
     // Use `flatpak info` which is more direct and reliable.
     // It returns a success status code if the package is installed.
-    let output = Command::new("flatpak")
-        .arg("info")
-        .arg(pkg_name)
-        .output();
+    let output = Command::new("flatpak").arg("info").arg(pkg_name).output();
 
     match output {
         Ok(output) => Ok(output.status.success()),
@@ -368,7 +365,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
     }
 
     // Execute APT commands
-        if let Some(apt) = &config.apt {
+    if let Some(apt) = &config.apt {
         // APT package installation is not easily parallelized due to sudo and potential dependencies.
         // We process them sequentially for now.
         for pkg_spec in &apt.list {
