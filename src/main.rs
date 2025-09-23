@@ -568,34 +568,29 @@ fn apply_config(
                 })
                 .collect();
 
-            if packages_to_install.is_empty() {
-                return Ok(());
-            }
-
-            if dry_run {
-                for pkg in packages_to_install {
-                    println!("Would run: sudo snap install {}", pkg);
-                }
-                return Ok(());
-            }
-
-            if !yes {
-                // Sequential confirmation
-                for pkg in &packages_to_install {
-                    if confirm_installation(&format!(
-                        "Do you want to install snap package '{}'?",
-                        pkg
-                    ))? {
-                        run_command("sudo", &["snap", "install", pkg])?;
-                    } else {
-                        println!("Installation aborted by user.");
+            if !packages_to_install.is_empty() {
+                if dry_run {
+                    for pkg in &packages_to_install {
+                        println!("Would run: sudo snap install {}", pkg);
                     }
+                } else if !yes {
+                    // Sequential confirmation
+                    for pkg in &packages_to_install {
+                        if confirm_installation(&format!(
+                            "Do you want to install snap package '{}'?",
+                            pkg
+                        ))? {
+                            run_command("sudo", &["snap", "install", pkg])?;
+                        } else {
+                            println!("Installation aborted by user.");
+                        }
+                    }
+                } else {
+                    // Parallel installation
+                    packages_to_install.par_iter().try_for_each(|pkg| {
+                        run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
+                    })?;
                 }
-            } else {
-                // Parallel installation
-                packages_to_install.par_iter().try_for_each(|pkg| {
-                    run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
-                })?;
             }
         }
     }
@@ -616,34 +611,29 @@ fn apply_config(
                 })
                 .collect();
 
-            if packages_to_install.is_empty() {
-                return Ok(());
-            }
-
-            if dry_run {
-                for pkg in packages_to_install {
-                    println!("Would run: flatpak install -y {}", pkg);
-                }
-                return Ok(());
-            }
-
-            if !yes {
-                // Sequential confirmation
-                for pkg in &packages_to_install {
-                    if confirm_installation(&format!(
-                        "Do you want to install flatpak package '{}'?",
-                        pkg
-                    ))? {
-                        run_command("flatpak", &["install", "-y", pkg])?;
-                    } else {
-                        println!("Installation aborted by user.");
+            if !packages_to_install.is_empty() {
+                if dry_run {
+                    for pkg in &packages_to_install {
+                        println!("Would run: flatpak install -y {}", pkg);
                     }
+                } else if !yes {
+                    // Sequential confirmation
+                    for pkg in &packages_to_install {
+                        if confirm_installation(&format!(
+                            "Do you want to install flatpak package '{}'?",
+                            pkg
+                        ))? {
+                            run_command("flatpak", &["install", "-y", pkg])?;
+                        } else {
+                            println!("Installation aborted by user.");
+                        }
+                    }
+                } else {
+                    // Parallel installation
+                    packages_to_install.par_iter().try_for_each(|pkg| {
+                        run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
+                    })?;
                 }
-            } else {
-                // Parallel installation
-                packages_to_install.par_iter().try_for_each(|pkg| {
-                    run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
-                })?;
             }
         }
     }
@@ -664,22 +654,19 @@ fn apply_config(
                 })
                 .collect();
 
-            if packages_to_install.is_empty() {
-                return Ok(());
-            }
-
-            if dry_run {
-                for pkg in packages_to_install {
-                    println!("Would run: cargo install --locked --force {}", pkg);
+            if !packages_to_install.is_empty() {
+                if dry_run {
+                    for pkg in &packages_to_install {
+                        println!("Would run: cargo install --locked --force {}", pkg);
+                    }
+                } else {
+                    // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
+                    packages_to_install.par_iter().try_for_each(|pkg| {
+                        run_command("cargo", &["install", "--locked", "--force", pkg])
+                            .map_err(AppError::Command)
+                    })?;
                 }
-                return Ok(());
             }
-
-            // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
-            packages_to_install.par_iter().try_for_each(|pkg| {
-                run_command("cargo", &["install", "--locked", "--force", pkg])
-                    .map_err(AppError::Command)
-            })?;
         }
     }
 
