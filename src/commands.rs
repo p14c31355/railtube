@@ -433,8 +433,8 @@ mod tests {
         check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
             .unwrap();
         let output_str = String::from_utf8(output).unwrap();
-        assert!(output_str.contains("missing_pkg"));
-        assert!(output_str.contains("extra_pkg"));
+        let expected = "\nTest packages listed in TOML but not installed:\n- missing_pkg\n\nTest packages installed but not listed in TOML:\n- extra_pkg\n";
+        assert_eq!(output_str, expected);
     }
 
     #[test]
