@@ -321,7 +321,7 @@ fn get_installed_snap_packages() -> Result<Vec<String>, Box<dyn std::error::Erro
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
+    for line in stdout.lines().skip(1) {
         // Example line: "Name Version Rev Tracking Publisher Notes"
         if let Some(pkg_name) = line.split_whitespace().next() {
             packages.push(pkg_name.to_string());
