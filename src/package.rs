@@ -227,7 +227,8 @@ mod tests {
 
     #[test]
     fn test_determine_install_not_installed_with_version() {
-        let result = determine_package_installation("testpkg", &Some("1.0".to_string()), None, "Test");
+        let result =
+            determine_package_installation("testpkg", &Some("1.0".to_string()), None, "Test");
         assert!(result);
     }
 
@@ -241,14 +242,24 @@ mod tests {
     #[test]
     fn test_determine_skip_installed_matching_version() {
         let installed = "1.0".to_string();
-        let result = determine_package_installation("testpkg", &Some("1.0".to_string()), Some(&installed), "Test");
+        let result = determine_package_installation(
+            "testpkg",
+            &Some("1.0".to_string()),
+            Some(&installed),
+            "Test",
+        );
         assert!(!result);
     }
 
     #[test]
     fn test_determine_install_installed_mismatching_version() {
         let installed = "1.0".to_string();
-        let result = determine_package_installation("testpkg", &Some("2.0".to_string()), Some(&installed), "Test");
+        let result = determine_package_installation(
+            "testpkg",
+            &Some("2.0".to_string()),
+            Some(&installed),
+            "Test",
+        );
         assert!(result);
     }
 }
