@@ -24,172 +24,173 @@ pub fn apply_config(
         }
     };
 
-    if should_process("system") {
-        if let Some(sys) = &config.system {
-            if sys.update {
-                if dry_run {
-                    println!("Would run: sudo apt update");
-                } else {
-                    run_command("sudo", ["apt", "update"])?;
-                }
-            }
+    if should_process("system")
+        && let Some(sys) = &config.system
+        && sys.update
+    {
+        if dry_run {
+            println!("Would run: sudo apt update");
+        } else {
+            run_command("sudo", ["apt", "update"])?;
         }
     }
 
-    if should_process("apt") {
-        if let Some(apt) = &config.apt {
-            let apt_map = match crate::package::get_installed_apt_packages_map() {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("Warning: Error fetching APT packages map: {}. Proceeding with installation for all APT packages.", e);
-                    std::collections::HashMap::new()
-                }
-            };
-            for pkg_spec in &apt.list {
-                let (pkg_name, desired_version) =
-                    if let Some((name, version)) = pkg_spec.split_once('=') {
-                        (name, Some(version.to_string()))
-                    } else {
-                        (pkg_spec.as_str(), None)
-                    };
-
-                let should_install = crate::package::determine_package_installation(
-                    pkg_name,
-                    &desired_version,
-                    apt_map.get(pkg_name),
-                    "APT",
+    if should_process("apt")
+        && let Some(apt) = &config.apt
+    {
+        let apt_map = match crate::package::get_installed_apt_packages_map() {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Error fetching APT packages map: {}. Proceeding with installation for all APT packages.",
+                    e
                 );
+                std::collections::HashMap::new()
+            }
+        };
+        for pkg_spec in &apt.list {
+            let (pkg_name, desired_version) =
+                if let Some((name, version)) = pkg_spec.split_once('=') {
+                    (name, Some(version.to_string()))
+                } else {
+                    (pkg_spec.as_str(), None)
+                };
 
-                if !should_install {
+            let should_install = crate::package::determine_package_installation(
+                pkg_name,
+                &desired_version,
+                apt_map.get(pkg_name),
+                "APT",
+            );
+
+            if !should_install {
+                continue;
+            }
+
+            let action_desc = format!("Installing APT package '{}'", pkg_spec);
+            crate::utils::log_or_eprint(&action_desc, "Failed to log message");
+            println!("{}", action_desc);
+
+            if dry_run {
+                println!("Would run: sudo apt install -y {}", pkg_spec);
+            } else {
+                if !yes
+                    && !confirm_installation(&format!("Do you want to install '{}'?", pkg_spec))?
+                {
+                    println!("Installation aborted by user.");
                     continue;
                 }
-
-                let action_desc = format!("Installing APT package '{}'", pkg_spec);
-                crate::utils::log_or_eprint(&action_desc, "Failed to log message");
-                println!("{}", action_desc);
-
-                if dry_run {
-                    println!("Would run: sudo apt install -y {}", pkg_spec);
-                } else {
-                    if !yes
-                        && !confirm_installation(&format!(
-                            "Do you want to install '{}'?",
-                            pkg_spec
-                        ))?
-                    {
-                        println!("Installation aborted by user.");
-                        continue;
-                    }
-                    run_command("sudo", ["apt", "install", "-y", pkg_spec])?;
-                }
+                run_command("sudo", ["apt", "install", "-y", pkg_spec])?;
             }
         }
     }
 
-    if should_process("snap") {
-        if let Some(snap) = &config.snap {
-            install_generic_packages(
-                &snap.list,
-                "Snap",
-                &["sudo", "snap", "install"],
-                is_snap_package_installed,
-                |pkg| pkg.split_whitespace().next().unwrap_or(pkg),
-                dry_run,
-                yes,
-            )?;
-        }
+    if should_process("snap")
+        && let Some(snap) = &config.snap
+    {
+        install_generic_packages(
+            &snap.list,
+            "Snap",
+            &["sudo", "snap", "install"],
+            is_snap_package_installed,
+            |pkg| pkg.split_whitespace().next().unwrap_or(pkg),
+            dry_run,
+            yes,
+        )?;
     }
 
-    if should_process("flatpak") {
-        if let Some(flatpak) = &config.flatpak {
-            install_generic_packages(
-                &flatpak.list,
-                "Flatpak",
-                &["flatpak", "install", "-y"],
-                is_flatpak_package_installed,
-                |pkg| pkg,
-                dry_run,
-                yes,
-            )?;
-        }
+    if should_process("flatpak")
+        && let Some(flatpak) = &config.flatpak
+    {
+        install_generic_packages(
+            &flatpak.list,
+            "Flatpak",
+            &["flatpak", "install", "-y"],
+            is_flatpak_package_installed,
+            |pkg| pkg,
+            dry_run,
+            yes,
+        )?;
     }
 
-    if should_process("cargo") {
-        if let Some(cargo) = &config.cargo {
-            let cargo_map = match crate::package::get_installed_cargo_packages_map() {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("Warning: Error fetching Cargo packages map: {}. Proceeding with installation for all Cargo packages.", e);
-                    std::collections::HashMap::new()
-                }
-            };
-            for pkg_spec in &cargo.list {
-                let (pkg_name, desired_version) =
-                    if let Some((name, version)) = pkg_spec.split_once('=') {
-                        (name, Some(version.to_string()))
-                    } else {
-                        (pkg_spec.as_str(), None)
-                    };
-
-                let should_install = crate::package::determine_package_installation(
-                    pkg_name,
-                    &desired_version,
-                    cargo_map.get(pkg_name),
-                    "Cargo",
+    if should_process("cargo")
+        && let Some(cargo) = &config.cargo
+    {
+        let cargo_map = match crate::package::get_installed_cargo_packages_map() {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Error fetching Cargo packages map: {}. Proceeding with installation for all Cargo packages.",
+                    e
                 );
+                std::collections::HashMap::new()
+            }
+        };
+        for pkg_spec in &cargo.list {
+            let (pkg_name, desired_version) =
+                if let Some((name, version)) = pkg_spec.split_once('=') {
+                    (name, Some(version.to_string()))
+                } else {
+                    (pkg_spec.as_str(), None)
+                };
 
-                if should_install {
-                    if dry_run {
-                        println!("Would run: cargo install --locked --force {}", pkg_spec);
-                    } else {
-                        run_command("cargo", ["install", "--locked", "--force", pkg_spec])?;
-                    }
+            let should_install = crate::package::determine_package_installation(
+                pkg_name,
+                &desired_version,
+                cargo_map.get(pkg_name),
+                "Cargo",
+            );
+
+            if should_install {
+                if dry_run {
+                    println!("Would run: cargo install --locked --force {}", pkg_spec);
+                } else {
+                    run_command("cargo", ["install", "--locked", "--force", pkg_spec])?;
                 }
             }
         }
     }
 
-    if should_process("deb") {
-        if let Some(deb) = &config.deb {
-            let temp_dir = tempdir()?;
-            let client = Client::new();
-            for url in &deb.urls {
-                let filename = url
-                    .split('/')
-                    .next_back()
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("package.deb");
-                let temp_path = temp_dir.path().join(filename);
+    if should_process("deb")
+        && let Some(deb) = &config.deb
+    {
+        let temp_dir = tempdir()?;
+        let client = Client::new();
+        for url in &deb.urls {
+            let filename = url
+                .split('/')
+                .next_back()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("package.deb");
+            let temp_path = temp_dir.path().join(filename);
 
-                println!("Downloading {} to {}", url, temp_path.display());
-                let mut response = client.get(url).send()?;
-                if !response.status().is_success() {
-                    return Err(AppError::Other(
-                        format!("Failed to download {}: {}", url, response.status()).into(),
-                    ));
-                }
-                let mut file = std::fs::File::create(&temp_path)?;
-                response.copy_to(&mut file)?;
+            println!("Downloading {} to {}", url, temp_path.display());
+            let mut response = client.get(url).send()?;
+            if !response.status().is_success() {
+                return Err(AppError::Other(
+                    format!("Failed to download {}: {}", url, response.status()).into(),
+                ));
+            }
+            let mut file = std::fs::File::create(&temp_path)?;
+            response.copy_to(&mut file)?;
 
-                println!("Installing {}...", temp_path.display());
-                if dry_run {
-                    println!("Would run: sudo dpkg -i {}", temp_path.display());
-                    println!("Would run: sudo apt --fix-broken install -y");
-                } else {
-                    if !yes
-                        && !confirm_installation(&format!(
-                            "Do you want to install deb package '{}'?",
-                            url
-                        ))?
-                    {
-                        println!("Installation aborted by user.");
-                        continue;
-                    }
-                    let dpkg_args =
-                        vec![OsStr::new("dpkg"), OsStr::new("-i"), temp_path.as_os_str()];
-                    run_command("sudo", dpkg_args)?;
-                    run_command("sudo", ["apt", "--fix-broken", "install", "-y"])?;
+            println!("Installing {}...", temp_path.display());
+            if dry_run {
+                println!("Would run: sudo dpkg -i {}", temp_path.display());
+                println!("Would run: sudo apt --fix-broken install -y");
+            } else {
+                if !yes
+                    && !confirm_installation(&format!(
+                        "Do you want to install deb package '{}'?",
+                        url
+                    ))?
+                {
+                    println!("Installation aborted by user.");
+                    continue;
                 }
+                let dpkg_args = vec![OsStr::new("dpkg"), OsStr::new("-i"), temp_path.as_os_str()];
+                run_command("sudo", dpkg_args)?;
+                run_command("sudo", ["apt", "--fix-broken", "install", "-y"])?;
             }
         }
     }

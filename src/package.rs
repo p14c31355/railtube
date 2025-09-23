@@ -183,7 +183,10 @@ pub fn determine_package_installation(
     if let Some(installed_version) = installed_version {
         if let Some(version_to_match) = desired_version {
             if installed_version != version_to_match {
-                println!("{} package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", package_type, pkg_name, installed_version, version_to_match);
+                println!(
+                    "{} package '{}' installed with version '{}', but '{}' is requested. Reinstalling.",
+                    package_type, pkg_name, installed_version, version_to_match
+                );
                 true
             } else {
                 println!(
