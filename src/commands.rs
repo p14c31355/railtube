@@ -5,6 +5,7 @@ use crate::utils::{confirm_installation, run_command};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use tempfile::tempdir;
 
 pub fn apply_config(
@@ -183,16 +184,8 @@ pub fn apply_config(
                         println!("Installation aborted by user.");
                         continue;
                     }
-                    run_command(
-                        "sudo",
-                        &[
-                            "dpkg",
-                            "-i",
-                            temp_path.to_str().ok_or(AppError::Other(
-                                "Temporary path is not valid UTF-8".into(),
-                            ))?,
-                        ],
-                    )?;
+                    let dpkg_args = vec![OsStr::new("dpkg"), OsStr::new("-i"), temp_path.as_os_str()];
+                    run_command("sudo", dpkg_args)?;
                     run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
                 }
             }
@@ -230,6 +223,10 @@ fn install_generic_packages(
 
     if packages_to_install.is_empty() {
         return Ok(());
+    }
+
+    if !packages_to_install.is_empty() {
+        println!("Will attempt to install the following {} packages: {:?}", manager_name, packages_to_install);
     }
 
     if dry_run {

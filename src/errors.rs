@@ -1,9 +1,11 @@
 use thiserror::Error;
 
+use std::ffi::OsString;
+
 #[derive(Debug)]
 pub struct CommandError {
-    pub command: String,
-    pub args: Vec<String>,
+    pub command: OsString,
+    pub args: Vec<OsString>,
     pub exit_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
@@ -14,8 +16,8 @@ impl std::fmt::Display for CommandError {
         writeln!(
             f,
             "Command failed: {} {}",
-            self.command,
-            self.args.join(" ")
+            self.command.to_string_lossy(),
+            self.args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join(" ")
         )?;
         if let Some(code) = self.exit_code {
             writeln!(f, "Exit code: {}", code)?;

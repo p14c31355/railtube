@@ -4,6 +4,8 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::process::Command;
 
+use std::ffi::{OsStr, OsString};
+
 // Function to log messages to a file
 pub fn log_message(message: &str) -> Result<(), std::io::Error> {
     const LOG_FILE: &str = "railtube.log";
@@ -22,23 +24,31 @@ pub fn log_or_eprint(message: &str, error_message: &str) {
     }
 }
 
-pub fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
-    let command_str = format!("{} {}", cmd, args.join(" "));
+pub fn run_command<C, A, I>(cmd: C, args: A) -> Result<(), CommandError>
+where
+    C: AsRef<OsStr>,
+    A: IntoIterator<Item = I>,
+    I: AsRef<OsStr>,
+{
+    let cmd_os = cmd.as_ref();
+    let arg_os: Vec<OsString> = args.into_iter().map(|a| a.as_ref().to_os_string()).collect();
+    let arg_strs: Vec<String> = arg_os.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+    let command_str = format!("{} {}", cmd_os.to_string_lossy(), arg_strs.join(" "));
     log_or_eprint(
         &format!("Executing: {}", command_str),
         "Failed to log message",
     );
     println!("Executing: {}", command_str);
 
-    let mut command = Command::new(cmd);
-    command.args(args);
+    let mut command = Command::new(cmd_os.to_owned());
+    command.args(arg_os.iter().map(|s| s.as_os_str()));
 
     let output = command.output().map_err(|e| {
         let stderr_msg = format!("Error executing command '{}': {}", command_str, e);
         log_or_eprint(&stderr_msg, "Failed to log error message");
         CommandError {
-            command: cmd.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
+            command: cmd_os.to_os_string(),
+            args: arg_os.iter().cloned().collect(),
             exit_code: None,
             stdout: String::new(),
             stderr: stderr_msg,
@@ -64,8 +74,8 @@ pub fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
         );
         log_or_eprint(&error_msg, "Failed to log error message");
         return Err(CommandError {
-            command: cmd.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
+            command: cmd_os.to_os_string(),
+            args: arg_os.iter().cloned().collect(),
             exit_code,
             stdout,
             stderr,
