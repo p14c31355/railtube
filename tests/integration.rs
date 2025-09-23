@@ -59,10 +59,10 @@ fn test_export_generates_toml() {
 
     // Check prerequisites
     let prerequisites = [
-        ("dpkg-query", &["-W", "-f=${Package}\n"] as &[&str], "APT"),
-        ("snap", &["list"], "Snap"),
-        ("flatpak", &["list"], "Flatpak"),
-        ("cargo", &["install", "--list"], "Cargo"),
+        ("dpkg-query", &["-l"] as &[&str], "APT"),
+        ("snap", &["version"], "Snap"),
+        ("flatpak", &["--version"], "Flatpak"),
+        ("cargo", &["--version"], "Cargo"),
     ];
 
     for (command, args, name) in &prerequisites {
