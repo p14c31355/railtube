@@ -42,6 +42,8 @@ pub enum AppError {
     Fetch(#[from] reqwest::Error),
     #[error("TOML Deserialization Error: {0}")]
     TomlDe(#[from] toml::de::Error),
+    #[error("TOML Serialization Error: {0}")]
+    TomlSe(#[from] toml::ser::Error),
     #[error("Other Error: {0}")]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
