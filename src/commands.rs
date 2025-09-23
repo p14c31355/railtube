@@ -226,7 +226,7 @@ fn install_generic_packages(
         return Ok(());
     }
 
-        println!(
+    println!(
         "Will attempt to install the following {} packages: {:?}",
         manager_name, packages_to_install
     );
@@ -241,15 +241,19 @@ fn install_generic_packages(
                 "Do you want to install {} package '{}'?",
                 manager_name, pkg
             ))? {
-                                let args = base_cmd[1..].iter().copied().chain(std::iter::once(*pkg));
+                let args = base_cmd[1..].iter().copied().chain(std::iter::once(*pkg));
                 run_command(base_cmd[0], args)?;
             } else {
                 println!("Installation aborted by user.");
             }
         }
     } else {
-                packages_to_install.par_iter().try_for_each(|pkg| {
-            let args = base_cmd.iter().skip(1).copied().chain(std::iter::once(*pkg));
+        packages_to_install.par_iter().try_for_each(|pkg| {
+            let args = base_cmd
+                .iter()
+                .skip(1)
+                .copied()
+                .chain(std::iter::once(*pkg));
             run_command(base_cmd[0], args).map_err(AppError::Command)
         })?;
     }
