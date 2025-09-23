@@ -47,7 +47,7 @@ where
     println!("Executing: {}", command_str);
 
     let mut command = Command::new(cmd_os);
-    command.args(arg_os.iter().map(|s| s.as_os_str()));
+    command.args(&arg_os);
 
     let output = command.output().map_err(|e| {
         let stderr_msg = format!("Error executing command '{}': {}", command_str, e);
