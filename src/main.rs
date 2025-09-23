@@ -229,27 +229,17 @@ fn is_cargo_package_installed(pkg_name: &str) -> Result<bool, String> {
 fn is_snap_package_installed(pkg_name: &str) -> Result<bool, String> {
     // Changed return type to String for Send
     // Snap package names can sometimes have arguments like "code --classic".
-    // We need to extract the base package name.
+    // We need to extract the base package name for the check.
     let base_pkg_name = pkg_name.split_whitespace().next().unwrap_or(pkg_name);
 
-    let output = Command::new("snap").arg("list").output();
+    // Use `snap info` which is more direct. It returns a success status if the package is installed.
+    let output = Command::new("snap").arg("info").arg(base_pkg_name).output();
 
     match output {
-        Ok(output) => {
-            if !output.status.success() {
-                eprintln!("Warning: Failed to list installed snap packages. Assuming '{}' is not installed.", base_pkg_name);
-                return Ok(false);
-            }
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // The output format is typically "Name Version Rev Tracking Publisher Notes"
-            // We need to check if the package name exists in the first column.
-            Ok(stdout
-                .lines()
-                .any(|line| line.split_whitespace().next() == Some(base_pkg_name)))
-        }
+        Ok(output) => Ok(output.status.success()),
         Err(e) => {
             eprintln!(
-                "Warning: Error executing 'snap list': {}. Assuming '{}' is not installed.",
+                "Warning: Error executing 'snap info': {}. Assuming '{}' is not installed.",
                 e, base_pkg_name
             );
             Ok(false)
@@ -259,25 +249,18 @@ fn is_snap_package_installed(pkg_name: &str) -> Result<bool, String> {
 
 // Helper to check if a Flatpak package is installed
 fn is_flatpak_package_installed(pkg_name: &str) -> Result<bool, String> {
-    // Changed return type to String for Send
-    let output = Command::new("flatpak").arg("list").output();
+    // Use `flatpak info` which is more direct and reliable.
+    // It returns a success status code if the package is installed.
+    let output = Command::new("flatpak")
+        .arg("info")
+        .arg(pkg_name)
+        .output();
 
     match output {
-        Ok(output) => {
-            if !output.status.success() {
-                eprintln!("Warning: Failed to list installed flatpak packages. Assuming '{}' is not installed.", pkg_name);
-                return Ok(false);
-            }
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // The output format is typically "Name Version ApplicationID Runtime Origin Installation"
-            // We need to check if the ApplicationID exists in the third column.
-            Ok(stdout
-                .lines()
-                .any(|line| line.split_whitespace().nth(2) == Some(pkg_name)))
-        }
+        Ok(output) => Ok(output.status.success()),
         Err(e) => {
             eprintln!(
-                "Warning: Error executing 'flatpak list': {}. Assuming '{}' is not installed.",
+                "Warning: Error executing 'flatpak info': {}. Assuming '{}' is not installed.",
                 e, pkg_name
             );
             Ok(false)
@@ -385,34 +368,33 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
     }
 
     // Execute APT commands
-    if let Some(apt) = &config.apt {
+        if let Some(apt) = &config.apt {
         // APT package installation is not easily parallelized due to sudo and potential dependencies.
         // We process them sequentially for now.
         for pkg_spec in &apt.list {
-            let mut parts = pkg_spec.splitn(2, '=');
-            let pkg_name = parts.next().unwrap_or(pkg_spec);
-            let version = parts.next(); // This will be Some("version") or None
+            let pkg_name = pkg_spec.split('=').next().unwrap_or(pkg_spec);
 
-            let mut apt_args = vec!["install", "-y"];
-            if version.is_some() {
-                apt_args.push(pkg_spec); // Use the full "package=version" string
-            } else {
-                apt_args.push(pkg_name);
+            // Check if package is already installed to avoid unnecessary work.
+            let is_installed = Command::new("dpkg")
+                .arg("-s")
+                .arg(pkg_name)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+
+            if is_installed {
+                println!("APT package '{}' already installed, skipping.", pkg_name);
+                continue;
             }
 
-            // Log the specific action before running the command
-            let action_desc = if version.is_some() {
-                format!("Installing APT package '{}' with version", pkg_spec)
-            } else {
-                format!("Installing APT package '{}'", pkg_name)
-            };
+            let action_desc = format!("Installing APT package '{}'", pkg_spec);
             log_or_eprint(&action_desc, "Failed to log message");
             println!("{}", action_desc);
 
             if dry_run {
-                println!("Would run: sudo {}", apt_args.join(" "));
+                println!("Would run: sudo apt install -y {}", pkg_spec);
             } else {
-                run_command("sudo", &apt_args)?;
+                run_command("sudo", &["apt", "install", "-y", pkg_spec])?;
             }
         }
     }
