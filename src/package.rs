@@ -24,6 +24,31 @@ pub fn is_cargo_package_installed(pkg_name: &str) -> bool {
     }
 }
 
+pub fn get_installed_cargo_version(pkg_name: &str) -> Result<Option<String>, AppError> {
+    let output = Command::new("cargo").arg("install").arg("--list").output()?;
+
+    if !output.status.success() {
+        return Err(AppError::Other(
+            "Failed to list installed Cargo packages.".into(),
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some(first) = line.split_whitespace().next() {
+            if first.trim_end_matches(':') == pkg_name {
+                // Line format: "pkg v1.2.3 (path)"
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let version = parts[1].trim_start_matches('v');
+                    return Ok(Some(version.to_string()));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
 pub fn is_snap_package_installed(pkg_name: &str) -> bool {
     let base_pkg_name = pkg_name.split_whitespace().next().unwrap_or(pkg_name);
 

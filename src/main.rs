@@ -17,7 +17,6 @@ use utils::*;
 mod commands;
 use commands::*;
 
-// Helper function to confirm installation with the user
 
 fn main() -> Result<(), AppError> {
     let args = Args::parse();

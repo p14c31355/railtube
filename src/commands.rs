@@ -357,64 +357,66 @@ pub fn check_package_discrepancies(
     }
 }
 
+fn check_section_discrepancies<F, P>(
+    section: &Option<Section>,
+    manager_name: &str,
+    get_installed: F,
+    parse_pkg: P,
+) where
+    F: FnOnce() -> Result<Vec<String>, AppError>,
+    P: Fn(&String) -> &str,
+{
+    if let Some(section) = section {
+        let toml_packages = section
+            .list
+            .iter()
+            .map(parse_pkg)
+            .collect::<HashSet<_>>();
+        match get_installed() {
+            Ok(installed_packages) => {
+                let installed_packages_set = installed_packages
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<HashSet<_>>();
+                check_package_discrepancies(manager_name, &toml_packages, &installed_packages_set);
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to list installed {} packages: {}", manager_name, e);
+            }
+        }
+    }
+}
+
 pub fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
     println!("Running railtube doctor for: {}", source);
 
-    if let Some(apt_section) = &config.apt {
-        let toml_packages = apt_section
-            .list
-            .iter()
-            .map(|pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec.as_str()))
-            .collect::<HashSet<_>>();
-        let installed_packages = get_installed_apt_packages()?;
-        let installed_packages_set = installed_packages
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        check_package_discrepancies("APT", &toml_packages, &installed_packages_set);
-    }
+    check_section_discrepancies(
+        &config.apt,
+        "APT",
+        get_installed_apt_packages,
+        |pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec.as_str()),
+    );
 
-    if let Some(snap_section) = &config.snap {
-        let toml_packages = snap_section
-            .list
-            .iter()
-            .map(|pkg| pkg.split_whitespace().next().unwrap_or(pkg.as_str()))
-            .collect::<HashSet<_>>();
-        let installed_packages = get_installed_snap_packages()?;
-        let installed_packages_set = installed_packages
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        check_package_discrepancies("Snap", &toml_packages, &installed_packages_set);
-    }
+    check_section_discrepancies(
+        &config.snap,
+        "Snap",
+        get_installed_snap_packages,
+        |pkg| pkg.split_whitespace().next().unwrap_or(pkg.as_str()),
+    );
 
-    if let Some(flatpak_section) = &config.flatpak {
-        let toml_packages = flatpak_section
-            .list
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        let installed_packages = get_installed_flatpak_packages()?;
-        let installed_packages_set = installed_packages
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        check_package_discrepancies("Flatpak", &toml_packages, &installed_packages_set);
-    }
+    check_section_discrepancies(
+        &config.flatpak,
+        "Flatpak",
+        get_installed_flatpak_packages,
+        |pkg| pkg.as_str(),
+    );
 
-    if let Some(cargo_section) = &config.cargo {
-        let toml_packages = cargo_section
-            .list
-            .iter()
-            .map(|pkg| pkg.split('=').next().unwrap_or(pkg.as_str()))
-            .collect::<HashSet<_>>();
-        let installed_packages = get_installed_cargo_packages()?;
-        let installed_packages_set = installed_packages
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        check_package_discrepancies("Cargo", &toml_packages, &installed_packages_set);
-    }
+    check_section_discrepancies(
+        &config.cargo,
+        "Cargo",
+        get_installed_cargo_packages,
+        |pkg| pkg.split('=').next().unwrap_or(pkg.as_str()),
+    );
 
     Ok(())
 }
