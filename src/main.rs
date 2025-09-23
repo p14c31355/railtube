@@ -36,9 +36,9 @@ fn main() -> Result<(), AppError> {
 
     // For other commands, fetch and parse the TOML configuration
     let config: Config = match &args.command {
-        Commands::Apply { ref source, .. }
-        | Commands::Run { ref source, .. }
-        | Commands::Doctor { ref source } => {
+        Commands::Apply { source, .. }
+        | Commands::Run { source, .. }
+        | Commands::Doctor { source } => {
             let toml_str = fetch_toml_content(source)?;
             toml::from_str(&toml_str).map_err(AppError::TomlDe)?
         }

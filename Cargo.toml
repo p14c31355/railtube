@@ -1,7 +1,22 @@
 [package]
 name = "railtube"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = ["p14c31355 <thinkoverheat@gmail.com>"]
+description = "Declarative environment manager inspired by home-manager, for reproducible Linux setups with APT, Snap, Flatpak, Cargo and custom scripts."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/p14c31355/railtube"
+readme = "README.md"
+documentation = "https://docs.rs/railtube"
+keywords = ["environment", "package-manager", "linux", "dotfiles", "setup"]
+categories = ["command-line-utilities", "config", "development-tools"]
+exclude = [
+  "target/",
+  ".github/",
+  ".gitignore",
+  "tests/",
+  "examples/",
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,7 +25,7 @@ clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.9.7"
 reqwest = { version = "0.12.23", features = ["blocking"] }
-tempfile = "3.22"
+tempfile = "3.23.0"
 rayon = "1.5"
 dirs = "6.0.0"
 thiserror = "2.0.16"
