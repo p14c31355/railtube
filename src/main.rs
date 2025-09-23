@@ -485,7 +485,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
                 println!("Would run: sudo dpkg -i {}", temp_path.display());
                 println!("Would run: sudo apt --fix-broken install -y");
             } else {
-                run_command("sudo", &["dpkg", "-i", temp_path.to_str().unwrap()])?;
+                run_command("sudo", &["dpkg", "-i", temp_path.to_str().ok_or("Temporary path is not valid UTF-8")?])?;
                 run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
             }
         }
