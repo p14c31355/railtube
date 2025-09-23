@@ -1,16 +1,7 @@
 use std::fs::File;
 use std::io::Write;
-use std::ops::Drop;
 use std::process::Command;
 use tempfile::TempDir;
-
-struct FileGuard(&'static str);
-
-impl Drop for FileGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(self.0);
-    }
-}
 
 #[test]
 fn test_apply_dry_run() {
