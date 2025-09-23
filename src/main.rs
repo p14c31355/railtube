@@ -3,12 +3,12 @@ use std::{fs, io::Write};
 
 mod commands;
 mod errors;
-use errors::AppError;
+use crate::errors::AppError;
 
 mod config;
-use config::Config;
+use crate::config::Config;
 mod cli;
-use cli::{Args, Commands};
+use crate::cli::{Args, Commands};
 
 mod package;
 mod utils;
