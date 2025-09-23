@@ -191,31 +191,50 @@ pub fn apply_config(
         }
     }
 
-    if should_process("cargo") {
+        if should_process("cargo") {
         if let Some(cargo) = &config.cargo {
-            let packages_to_install: Vec<_> = cargo
-                .list
-                .iter()
-                .filter(|pkg| {
-                    if !is_cargo_package_installed(pkg) {
-                        true
+            for pkg_spec in &cargo.list {
+                let (pkg_name, desired_version) =
+                    if let Some((name, version)) = pkg_spec.split_once('=') {
+                        (name, Some(version.to_string()))
                     } else {
-                        println!("Cargo package '{}' already installed, skipping.", pkg);
-                        false
-                    }
-                })
-                .collect();
+                        (pkg_spec.as_str(), None)
+                    };
 
-            if !packages_to_install.is_empty() {
-                if dry_run {
-                    for pkg in &packages_to_install {
-                        println!("Would run: cargo install --locked --force {}", pkg);
+                let mut should_install = false;
+                match get_installed_cargo_version(pkg_name) {
+                    Ok(Some(installed_version)) => {
+                        if let Some(version_to_match) = &desired_version {
+                            if installed_version != *version_to_match {
+                                println!("Cargo package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
+                                should_install = true;
+                            } else {
+                                println!("Cargo package '{}' version '{}' already installed, skipping.", pkg_name, installed_version);
+                            }
+                        } else {
+                            println!("Cargo package '{}' already installed, skipping.", pkg_name);
+                        }
                     }
-                } else {
-                    packages_to_install.par_iter().try_for_each(|pkg| {
-                        run_command("cargo", &["install", "--locked", "--force", pkg])
-                            .map_err(AppError::Command)
-                    })?;
+                    Ok(None) => {
+                        if let Some(version) = &desired_version {
+                            println!("Cargo package '{}' version '{}' not installed. Installing.", pkg_name, version);
+                        } else {
+                            println!("Cargo package '{}' not installed. Installing.", pkg_name);
+                        }
+                        should_install = true;
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Error checking installed cargo version for '{}': {}. Proceeding with installation.", pkg_name, e);
+                        should_install = true;
+                    }
+                }
+
+                if should_install {
+                    if dry_run {
+                        println!("Would run: cargo install --locked --force {}", pkg_spec);
+                    } else {
+                        run_command("cargo", &["install", "--locked", "--force", pkg_spec])?;
+                    }
                 }
             }
         }
