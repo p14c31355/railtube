@@ -604,11 +604,11 @@ fn apply_config(
             if dry_run {
                 println!("Would run: sudo apt install -y {}", pkg_spec);
             } else {
-                if !yes {
-                    if !confirm_installation(&format!("Do you want to install '{}'?", pkg_spec))? {
-                        println!("Installation aborted by user.");
-                        continue; // Skip this package
-                    }
+                if !yes
+                    && !confirm_installation(&format!("Do you want to install '{}'?", pkg_spec))?
+                {
+                    println!("Installation aborted by user.");
+                    continue; // Skip this package
                 }
                 run_command("sudo", &["apt", "install", "-y", pkg_spec])?;
             }
@@ -634,7 +634,10 @@ fn apply_config(
                 for pkg in &snap.list {
                     let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
                     if !is_snap_package_installed(pkg_name) {
-                        if confirm_installation(&format!("Do you want to install snap package '{}'?", pkg))? {
+                        if confirm_installation(&format!(
+                            "Do you want to install snap package '{}'?",
+                            pkg
+                        ))? {
                             run_command("sudo", &["snap", "install", pkg])?;
                         } else {
                             println!("Installation aborted by user.");
@@ -676,7 +679,10 @@ fn apply_config(
             if !yes {
                 for pkg in &flatpak.list {
                     if !is_flatpak_package_installed(pkg) {
-                        if confirm_installation(&format!("Do you want to install flatpak package '{}'?", pkg))? {
+                        if confirm_installation(&format!(
+                            "Do you want to install flatpak package '{}'?",
+                            pkg
+                        ))? {
                             run_command("flatpak", &["install", "-y", pkg])?;
                         } else {
                             println!("Installation aborted by user.");
@@ -745,11 +751,14 @@ fn apply_config(
                 println!("Would run: sudo dpkg -i {}", temp_path.display());
                 println!("Would run: sudo apt --fix-broken install -y");
             } else {
-                if !yes {
-                    if !confirm_installation(&format!("Do you want to install deb package '{}'?", url))? {
-                        println!("Installation aborted by user.");
-                        continue; // Skip this package
-                    }
+                if !yes
+                    && !confirm_installation(&format!(
+                        "Do you want to install deb package '{}'?",
+                        url
+                    ))?
+                {
+                    println!("Installation aborted by user.");
+                    continue; // Skip this package
                 }
                 run_command(
                     "sudo",
@@ -769,11 +778,7 @@ fn apply_config(
     Ok(())
 }
 
-fn run_scripts(
-    config: &Config,
-    script_name: &str,
-    is_remote_source: bool,
-) -> Result<(), AppError> {
+fn run_scripts(config: &Config, script_name: &str, is_remote_source: bool) -> Result<(), AppError> {
     if let Some(scripts) = &config.scripts {
         if let Some(command_to_run) = scripts.commands.get(script_name) {
             println!("Running script '{}': {}", script_name, command_to_run);
@@ -801,9 +806,7 @@ fn run_scripts(
         }
     } else {
         eprintln!("No [scripts] section found in the TOML configuration.");
-        return Err(AppError::Other(
-            "No [scripts] section found.".into(),
-        ));
+        return Err(AppError::Other("No [scripts] section found.".into()));
     }
     Ok(())
 }
@@ -939,7 +942,8 @@ fn main() -> Result<(), AppError> {
     // Handle the Export command separately as it exits early
     if let Commands::Export { ref output } = args.command {
         let exported_config = export_current_environment()?;
-        let toml_string = toml::to_string_pretty(&exported_config).map_err(|e| AppError::Other(Box::new(e)))?;
+        let toml_string =
+            toml::to_string_pretty(&exported_config).map_err(|e| AppError::Other(Box::new(e)))?;
 
         // Add comment for unexported sections
         let mut final_toml_string = String::new();
