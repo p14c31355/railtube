@@ -134,7 +134,10 @@ fn log_or_eprint(message: &str, error_message: &str) {
 
 fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
     let command_str = format!("{} {}", cmd, args.join(" "));
-    log_or_eprint(&format!("Executing: {}", command_str), "Failed to log message");
+    log_or_eprint(
+        &format!("Executing: {}", command_str),
+        "Failed to log message",
+    );
     println!("Executing: {}", command_str);
 
     let mut command = Command::new(cmd);
