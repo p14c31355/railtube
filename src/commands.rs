@@ -6,8 +6,8 @@ use rayon::prelude::*;
 use reqwest::blocking::Client;
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use tempfile::tempdir;
 use std::io;
+use tempfile::tempdir;
 
 pub fn apply_config(
     config: &Config,
@@ -366,8 +366,13 @@ fn check_section_discrepancies<F, P>(
                     .map(String::as_str)
                     .collect::<HashSet<_>>();
                 let mut stdout = io::stdout().lock();
-                check_package_discrepancies(&mut stdout, manager_name, &toml_packages, &installed_packages_set)
-                    .expect("Failed to write to stdout");
+                check_package_discrepancies(
+                    &mut stdout,
+                    manager_name,
+                    &toml_packages,
+                    &installed_packages_set,
+                )
+                .expect("Failed to write to stdout");
             }
             Err(e) => {
                 eprintln!(
@@ -421,7 +426,8 @@ mod tests {
         installed_packages.insert("extra_pkg");
 
         let mut output = Vec::new();
-        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages).unwrap();
+        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
+            .unwrap();
         let output_str = String::from_utf8(output).unwrap();
         assert!(output_str.contains("missing_pkg"));
         assert!(output_str.contains("extra_pkg"));
@@ -436,7 +442,8 @@ mod tests {
         installed_packages.insert("common_pkg");
 
         let mut output = Vec::new();
-        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages).unwrap();
+        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages)
+            .unwrap();
         let output_str = String::from_utf8(output).unwrap();
         assert!(output_str.trim().is_empty());
     }

@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::Write;
+use std::ops::Drop;
 use std::process::Command;
 use tempfile::TempDir;
-use std::ops::Drop;
 
 struct FileGuard(&'static str);
 
@@ -61,7 +61,11 @@ fn test_export_generates_toml() {
     let mut prerequisites_met = true;
 
     // Check dpkg-query for APT
-    if let Err(e) = std::process::Command::new("dpkg-query").arg("-W").arg("-f=${Package}\\n").status() {
+    if let Err(e) = std::process::Command::new("dpkg-query")
+        .arg("-W")
+        .arg("-f=${Package}\\n")
+        .status()
+    {
         eprintln!("APT prerequisite failed: {}", e);
         prerequisites_met = false;
     }
@@ -79,7 +83,11 @@ fn test_export_generates_toml() {
     }
 
     // Check cargo install --list
-    if let Err(e) = std::process::Command::new("cargo").arg("install").arg("--list").status() {
+    if let Err(e) = std::process::Command::new("cargo")
+        .arg("install")
+        .arg("--list")
+        .status()
+    {
         eprintln!("Cargo prerequisite failed: {}", e);
         prerequisites_met = false;
     }
@@ -105,8 +113,7 @@ fn test_export_generates_toml() {
     );
 
     // Check if file was created and has content
-    let content =
-        std::fs::read_to_string(TEST_FILE).expect("Failed to read exported file");
+    let content = std::fs::read_to_string(TEST_FILE).expect("Failed to read exported file");
     assert!(
         content.contains("[apt]"),
         "Exported TOML should have [apt] section"
