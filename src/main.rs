@@ -1,5 +1,3 @@
-#![feature(str_as_str)] // Add this line to enable the unstable feature
-
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize}; // Added Serialize
 use std::{fs, process::Command, io::{Read, Write}, path::PathBuf, collections::HashMap, fs::OpenOptions};
@@ -391,7 +389,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
             if dry_run {
                 println!("Would run: sudo {}", apt_args.join(" "));
             } else {
-                run_command("sudo", &apt_args.iter().map(|s| s.as_str()).collect::<Vec<&str>>())?;
+                run_command("sudo", &apt_args)?;
             }
         }
     }
