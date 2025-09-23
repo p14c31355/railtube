@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
-use reqwest::blocking::Client;
 use serde::Deserialize;
-use std::{collections::HashMap, fs, io::Read, process::Command};
+use std::{fs, process::Command, io::{Read, Write}, path::PathBuf, collections::HashMap, fs::OpenOptions};
+use reqwest::blocking::Client;
 use tempfile::tempdir;
+use rayon::prelude::*; // Import rayon for parallel processing
 
 // Custom error type for command execution
 #[derive(Debug)]
@@ -16,20 +17,15 @@ struct CommandError {
 
 impl std::fmt::Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "Command failed: {} {}",
-            self.command,
-            self.args.join(" ")
-        )?;
+        write!(f, "Command failed: {} {}\n", self.command, self.args.join(" "))?;
         if let Some(code) = self.exit_code {
-            writeln!(f, "Exit code: {}", code)?;
+            write!(f, "Exit code: {}\n", code)?;
         }
         if !self.stdout.is_empty() {
-            writeln!(f, "Stdout: {}", self.stdout)?;
+            write!(f, "Stdout: {}\n", self.stdout)?;
         }
         if !self.stderr.is_empty() {
-            writeln!(f, "Stderr: {}", self.stderr)?;
+            write!(f, "Stderr: {}\n", self.stderr)?;
         }
         Ok(())
     }
@@ -98,8 +94,21 @@ enum Commands {
     },
 }
 
+// Function to log messages to a file
+fn log_message(message: &str) -> Result<(), std::io::Error> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("railtube.log")?;
+    writeln!(file, "{}", message)?;
+    Ok(())
+}
+
 fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
-    println!("> {} {}", cmd, args.join(" "));
+    let log_message_str = format!("> {} {}", cmd, args.join(" "));
+    log_message(&log_message_str).unwrap_or_else(|e| eprintln!("Failed to log message: {}", e));
+    println!("{}", log_message_str);
+
     let mut command = Command::new(cmd);
     command.args(args);
 
@@ -116,6 +125,15 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
+        let error_msg = format!(
+            "Command failed: {} {}\nExit code: {:?}\nStdout: {}\nStderr: {}",
+            cmd,
+            args.join(" "),
+            exit_code,
+            stdout,
+            stderr
+        );
+        log_message(&error_msg).unwrap_or_else(|e| eprintln!("Failed to log error message: {}", e));
         return Err(CommandError {
             command: cmd.to_string(),
             args: args.iter().map(|s| s.to_string()).collect(),
@@ -142,6 +160,82 @@ fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>
     }
 }
 
+// Helper to check if a Cargo package is installed
+fn is_cargo_package_installed(pkg_name: &str) -> Result<bool, String> { // Changed return type to String for Send
+    let output = Command::new("cargo")
+        .arg("install")
+        .arg("--list")
+        .output();
+    
+    match output {
+        Ok(output) => {
+            if !output.status.success() {
+                eprintln!("Warning: Failed to list installed cargo packages. Assuming '{}' is not installed.", pkg_name);
+                return Ok(false);
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(stdout.lines().any(|line| line.starts_with(&format!("{} ", pkg_name))))
+        }
+        Err(e) => {
+            eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
+            Ok(false)
+        }
+    }
+}
+
+// Helper to check if a Snap package is installed
+fn is_snap_package_installed(pkg_name: &str) -> Result<bool, String> { // Changed return type to String for Send
+    // Snap package names can sometimes have arguments like "code --classic".
+    // We need to extract the base package name.
+    let base_pkg_name = pkg_name.split_whitespace().next().unwrap_or(pkg_name);
+
+    let output = Command::new("snap")
+        .arg("list")
+        .output();
+    
+    match output {
+        Ok(output) => {
+            if !output.status.success() {
+                eprintln!("Warning: Failed to list installed snap packages. Assuming '{}' is not installed.", base_pkg_name);
+                return Ok(false);
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // The output format is typically "Name Version Rev Tracking Publisher Notes"
+            // We need to check if the package name exists in the first column.
+            Ok(stdout.lines().any(|line| line.split_whitespace().next() == Some(base_pkg_name)))
+        }
+        Err(e) => {
+            eprintln!("Warning: Error executing 'snap list': {}. Assuming '{}' is not installed.", e, base_pkg_name);
+            Ok(false)
+        }
+    }
+}
+
+// Helper to check if a Flatpak package is installed
+fn is_flatpak_package_installed(pkg_name: &str) -> Result<bool, String> { // Changed return type to String for Send
+    let output = Command::new("flatpak")
+        .arg("list")
+        .output();
+    
+    match output {
+        Ok(output) => {
+            if !output.status.success() {
+                eprintln!("Warning: Failed to list installed flatpak packages. Assuming '{}' is not installed.", pkg_name);
+                return Ok(false);
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // The output format is typically "Name Version ApplicationID Runtime Origin Installation"
+            // We need to check if the ApplicationID exists in the third column.
+            Ok(stdout.lines().any(|line| line.split_whitespace().nth(2) == Some(pkg_name)))
+        }
+        Err(e) => {
+            eprintln!("Warning: Error executing 'flatpak list': {}. Assuming '{}' is not installed.", e, pkg_name);
+            Ok(false)
+        }
+    }
+}
+
+
 fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     // Handle system updates
     if let Some(sys) = &config.system {
@@ -152,30 +246,53 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 
     // Execute APT commands
     if let Some(apt) = &config.apt {
+        // APT package installation is not easily parallelized due to sudo and potential dependencies.
+        // We process them sequentially for now.
         for pkg in &apt.list {
+            // APT version pinning is complex and requires specific syntax like "package=version"
+            // For now, we install without version pinning.
             run_command("sudo", &["apt", "install", "-y", pkg])?;
         }
     }
 
-    // Execute Snap commands
+    // Execute Snap commands in parallel
     if let Some(snap) = &config.snap {
-        for pkg in &snap.list {
-            run_command("sudo", &["snap", "install", pkg])?;
-        }
+        snap.list.iter().for_each(|pkg| {
+            let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
+            if !is_snap_package_installed(pkg_name).unwrap_or(false) { // Handle potential errors from check
+                if let Err(e) = run_command("sudo", &["snap", "install", pkg]) {
+                    eprintln!("Error installing snap package '{}': {}", pkg_name, e);
+                }
+            } else {
+                println!("Snap package '{}' already installed, skipping.", pkg_name);
+            }
+        });
     }
 
-    // Execute Flatpak commands
+    // Execute Flatpak commands in parallel
     if let Some(flatpak) = &config.flatpak {
-        for pkg in &flatpak.list {
-            run_command("flatpak", &["install", "-y", pkg])?;
-        }
+        flatpak.list.iter().for_each(|pkg| {
+            if !is_flatpak_package_installed(pkg).unwrap_or(false) { // Handle potential errors from check
+                if let Err(e) = run_command("flatpak", &["install", "-y", pkg]) {
+                    eprintln!("Error installing flatpak package '{}': {}", pkg, e);
+                }
+            } else {
+                println!("Flatpak package '{}' already installed, skipping.", pkg);
+            }
+        });
     }
 
-    // Execute Cargo install commands
+    // Execute Cargo install commands in parallel
     if let Some(cargo) = &config.cargo {
-        for pkg in &cargo.list {
-            run_command("cargo", &["install", pkg])?;
-        }
+        cargo.list.iter().for_each(|pkg| {
+            if !is_cargo_package_installed(pkg).unwrap_or(false) { // Handle potential errors from check
+                if let Err(e) = run_command("cargo", &["install", pkg]) {
+                    eprintln!("Error installing cargo package '{}': {}", pkg, e);
+                }
+            } else {
+                println!("Cargo package '{}' already installed, skipping.", pkg);
+            }
+        });
     }
 
     // Handle .deb files
@@ -183,7 +300,7 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = tempdir()?;
         let client = Client::new(); // Client created here, outside the loop
         for url in &deb.urls {
-            let filename = url.split('/').next_back().unwrap_or("package.deb");
+            let filename = url.split('/').last().unwrap_or("package.deb");
             let temp_path = temp_dir.path().join(filename);
 
             println!("Downloading {} to {}", url, temp_path.display());
@@ -203,11 +320,7 @@ fn apply_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_scripts(
-    config: &Config,
-    script_name: &str,
-    is_remote_source: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_scripts(config: &Config, script_name: &str, is_remote_source: bool) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(scripts) = &config.scripts {
         if let Some(command_to_run) = scripts.commands.get(script_name) {
             println!("Running script '{}': {}", script_name, command_to_run);
@@ -245,16 +358,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config: Config = match args.command {
         Commands::Apply { ref source } => {
             let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str)
-                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
-        Commands::Run {
-            ref source,
-            ref script_name,
-        } => {
+        Commands::Run { ref source, ref script_name } => {
             let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str)
-                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
+            toml::from_str(&toml_str).map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
     };
 
@@ -263,10 +371,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Apply { ref source } => {
             apply_config(&config)?;
         }
-        Commands::Run {
-            ref source,
-            ref script_name,
-        } => {
+        Commands::Run { ref source, ref script_name } => {
             let is_remote = source.starts_with("http://") || source.starts_with("https://");
             run_scripts(&config, script_name, is_remote)?;
         }
