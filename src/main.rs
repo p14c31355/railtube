@@ -119,7 +119,7 @@ fn log_message(message: &str) -> Result<(), std::io::Error> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("railtube.log")?;
+        .open(LOG_FILE)?;
     writeln!(file, "{}", message)?;
     Ok(())
 }
