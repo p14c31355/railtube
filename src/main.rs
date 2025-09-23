@@ -287,30 +287,18 @@ fn is_flatpak_package_installed(pkg_name: &str) -> Result<bool, String> {
 
 // Helper to get installed APT packages
 fn get_installed_apt_packages() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut packages = Vec::new();
-    let output = Command::new("apt")
-        .arg("list")
-        .arg("--installed")
+    let output = Command::new("dpkg-query")
+        .arg("-W")
+        .arg("-f=${Package}\n")
         .output()?;
 
     if !output.status.success() {
-        return Err("Failed to list installed APT packages.".into());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to list installed APT packages with dpkg-query: {}", stderr).into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        // Example line: "ii  package-name:amd64        1.2.3-1ubuntu1  amd64"
-        // We want to extract "package-name"
-        if line.starts_with("ii ") {
-            if let Some(pkg_info) = line.split_whitespace().nth(1) {
-                // Remove architecture suffix like ":amd64" if present
-                if let Some(pkg_name) = pkg_info.split(':').next() {
-                    packages.push(pkg_name.to_string());
-                }
-            }
-        }
-    }
-    Ok(packages)
+    Ok(stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect())
 }
 
 // Helper to get installed Cargo packages
@@ -356,22 +344,20 @@ fn get_installed_snap_packages() -> Result<Vec<String>, Box<dyn std::error::Erro
 
 // Helper to get installed Flatpak packages
 fn get_installed_flatpak_packages() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut packages = Vec::new();
-    let output = Command::new("flatpak").arg("list").output()?;
+    let output = Command::new("flatpak")
+        .arg("list")
+        .arg("--app") // Only list applications
+        .arg("--columns=application") // Specify the column to get application IDs
+        .output()?;
 
     if !output.status.success() {
-        return Err("Failed to list installed Flatpak packages.".into());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to list installed Flatpak packages: {}", stderr).into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        // Example line: "Name Version ApplicationID Runtime Origin Installation"
-        // We want the ApplicationID (3rd column)
-        if let Some(app_id) = line.split_whitespace().nth(2) {
-            packages.push(app_id.to_string());
-        }
-    }
-    Ok(packages)
+    // Filter out empty lines and collect the application IDs
+    Ok(stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect())
 }
 
 fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -419,56 +405,62 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
         }
     }
 
-    // Execute Snap commands in parallel
+    // Execute Snap commands in parallel, propagating errors
     if let Some(snap) = &config.snap {
-        snap.list.par_iter().for_each(|pkg| {
+        let result: Result<(), CommandError> = snap.list.par_iter().try_for_each(|pkg| {
             let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
             if !is_snap_package_installed(pkg_name).unwrap_or(false) {
-                // Handle potential errors from check
                 let command_str = format!("sudo snap install {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
-                } else if let Err(e) = run_command("sudo", &["snap", "install", pkg]) {
-                    eprintln!("Error installing snap package '{}': {}", pkg_name, e);
+                    Ok(()) // In dry run, always succeed
+                } else {
+                    run_command("sudo", &["snap", "install", pkg])
                 }
             } else {
                 println!("Snap package '{}' already installed, skipping.", pkg_name);
+                Ok(())
             }
         });
+        result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
     }
 
-    // Execute Flatpak commands in parallel
+    // Execute Flatpak commands in parallel, propagating errors
     if let Some(flatpak) = &config.flatpak {
-        flatpak.list.par_iter().for_each(|pkg| {
+        let result: Result<(), CommandError> = flatpak.list.par_iter().try_for_each(|pkg| {
             if !is_flatpak_package_installed(pkg).unwrap_or(false) {
-                // Handle potential errors from check
                 let command_str = format!("flatpak install -y {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
-                } else if let Err(e) = run_command("flatpak", &["install", "-y", pkg]) {
-                    eprintln!("Error installing flatpak package '{}': {}", pkg, e);
+                    Ok(()) // In dry run, always succeed
+                } else {
+                    run_command("flatpak", &["install", "-y", pkg])
                 }
             } else {
                 println!("Flatpak package '{}' already installed, skipping.", pkg);
+                Ok(())
             }
         });
+        result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
     }
 
-    // Execute Cargo install commands in parallel
+    // Execute Cargo install commands in parallel, propagating errors
     if let Some(cargo) = &config.cargo {
-        cargo.list.par_iter().for_each(|pkg| {
+        let result: Result<(), CommandError> = cargo.list.par_iter().try_for_each(|pkg| {
             if !is_cargo_package_installed(pkg).unwrap_or(false) {
-                // Handle potential errors from check
                 let command_str = format!("cargo install {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
-                } else if let Err(e) = run_command("cargo", &["install", pkg]) {
-                    eprintln!("Error installing cargo package '{}': {}", pkg, e);
+                    Ok(()) // In dry run, always succeed
+                } else {
+                    run_command("cargo", &["install", pkg])
                 }
             } else {
                 println!("Cargo package '{}' already installed, skipping.", pkg);
+                Ok(())
             }
         });
+        result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
     }
 
     // Handle .deb files
