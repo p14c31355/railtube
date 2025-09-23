@@ -1,11 +1,10 @@
 use crate::config::{Config, Section, SystemSection};
 use crate::errors::AppError;
-use crate::package::*;
+use crate::package::{get_installed_cargo_version, *};
 use crate::utils::{confirm_installation, run_command};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use std::collections::HashSet;
-use std::process::Command;
 use tempfile::tempdir;
 
 pub fn apply_config(
@@ -38,54 +37,49 @@ pub fn apply_config(
     if should_process("apt") {
         if let Some(apt) = &config.apt {
             for pkg_spec in &apt.list {
-                let mut pkg_name = pkg_spec.as_str();
-                let mut desired_version: Option<String> = None;
+                let (pkg_name, desired_version) =
+                    if let Some((name, version)) = pkg_spec.split_once('=') {
+                        (name, Some(version.to_string()))
+                    } else {
+                        (pkg_spec.as_str(), None)
+                    };
 
-                if let Some((name, version)) = pkg_spec.split_once('=') {
-                    pkg_name = name;
-                    desired_version = Some(version.to_string());
+                let mut should_install = false;
+                match get_installed_apt_version(pkg_name) {
+                    Ok(Some(installed_version)) => {
+                        if let Some(version_to_match) = &desired_version {
+                            if installed_version != *version_to_match {
+                                println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
+                                should_install = true;
+                            } else {
+                                println!(
+                                    "APT package '{}' version '{}' already installed, skipping.",
+                                    pkg_name, installed_version
+                                );
+                            }
+                        } else {
+                            println!("APT package '{}' already installed, skipping.", pkg_name);
+                        }
+                    }
+                    Ok(None) => {
+                        if let Some(version) = &desired_version {
+                            println!(
+                                "APT package '{}' version '{}' not installed. Installing.",
+                                pkg_name, version
+                            );
+                        } else {
+                            println!("APT package '{}' not installed. Installing.", pkg_name);
+                        }
+                        should_install = true;
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Error checking installed APT version for '{}': {}. Proceeding with installation.", pkg_name, e);
+                        should_install = true;
+                    }
                 }
 
-                let is_installed = Command::new("dpkg")
-                    .arg("-s")
-                    .arg(pkg_name)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-
-                if is_installed {
-                    if let Some(version_to_match) = &desired_version {
-                        match get_installed_apt_version(pkg_name) {
-                            Ok(Some(installed_version)) => {
-                                if installed_version == *version_to_match {
-                                    println!(
-                                        "APT package '{}' version '{}' already installed, skipping.",
-                                        pkg_name, installed_version
-                                    );
-                                    continue;
-                                } else {
-                                    println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
-                                }
-                            }
-                            Ok(None) => {
-                                eprintln!("Warning: APT package '{}' reported as installed but version query failed. Proceeding with installation.", pkg_name);
-                            }
-                            Err(e) => {
-                                eprintln!("Warning: Error checking installed APT version for '{}': {}. Proceeding with installation.", pkg_name, e);
-                            }
-                        }
-                    } else {
-                        println!("APT package '{}' already installed, skipping.", pkg_name);
-                        continue;
-                    }
-                } else if desired_version.is_some() {
-                    println!(
-                        "APT package '{}' version '{}' not installed. Installing.",
-                        pkg_name,
-                        desired_version.as_ref().unwrap()
-                    );
-                } else {
-                    println!("APT package '{}' not installed. Installing.", pkg_name);
+                if !should_install {
+                    continue;
                 }
 
                 let action_desc = format!("Installing APT package '{}'", pkg_spec);
@@ -308,11 +302,7 @@ pub fn run_scripts(
 
             if is_remote_source {
                 println!("WARNING: Executing script from a remote source.");
-                print!("Do you want to proceed? (y/N): ");
-                std::io::Write::flush(&mut std::io::stdout())?;
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
-                if !input.trim().eq_ignore_ascii_case("y") {
+                if !confirm_installation("Do you want to proceed?")? {
                     println!("Script execution aborted by user.");
                     return Ok(());
                 }

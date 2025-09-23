@@ -1,13 +1,12 @@
 use clap::Parser;
-// Added Serialize
 use std::{fs, io::Write};
 
+mod commands;
 mod errors;
 use errors::AppError;
 
 mod config;
 use config::Config;
-
 mod cli;
 use cli::{Args, Commands};
 
@@ -15,7 +14,6 @@ mod package;
 mod utils;
 use crate::commands::{apply_config, doctor_command, export_current_environment, run_scripts};
 use crate::utils::fetch_toml_content;
-
 fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
