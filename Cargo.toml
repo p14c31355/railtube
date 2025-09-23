@@ -12,6 +12,7 @@ toml = "0.9.7"
 reqwest = { version = "0.12.23", features = ["blocking"] }
 tempfile = "3.22"
 rayon = "1.5"
+dirs = "6.0.0"
 
 [[bin]]
 name = "railtube"

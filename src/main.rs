@@ -44,6 +44,33 @@ impl std::fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
+// Implement From<std::io::Error> for CommandError
+impl From<std::io::Error> for CommandError {
+    fn from(err: std::io::Error) -> Self {
+        CommandError {
+            command: "io_error".to_string(), // Placeholder command
+            args: Vec::new(),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: err.to_string(),
+        }
+    }
+}
+
+// Implement From<Box<dyn std::error::Error>> for CommandError
+impl From<Box<dyn std::error::Error>> for CommandError {
+    fn from(err: Box<dyn std::error::Error>) -> Self {
+        CommandError {
+            command: "boxed_error".to_string(), // Placeholder command
+            args: Vec::new(),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: err.to_string(),
+        }
+    }
+}
+
+
 #[derive(Debug, Deserialize, Serialize)] // Added Serialize
 struct Config {
     system: Option<SystemSection>,
@@ -97,6 +124,12 @@ enum Commands {
         /// Perform a dry run, showing what would be installed without actually installing anything.
         #[arg(long, default_value = "false")]
         dry_run: bool,
+        /// Skip confirmation prompts for installations.
+        #[arg(long, default_value = "false")]
+        yes: bool,
+        /// Apply configurations to specific sections only (e.g., cargo, apt).
+        #[arg(long, value_delimiter = ',')] // Allow multiple comma-separated values
+        only: Option<Vec<String>>,
     },
     /// Run scripts defined in the TOML manifest
     Run {
@@ -105,6 +138,12 @@ enum Commands {
         source: String,
         /// The name of the script to run from the [scripts] section.
         script_name: String,
+    },
+    /// Run the doctor command to check installed packages against the TOML manifest.
+    Doctor {
+        /// The source of the TOML configuration file (local path or URL).
+        #[arg(short, long)]
+        source: String,
     },
     /// Export the current environment to a TOML manifest
     Export {
@@ -201,6 +240,23 @@ fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>
 
 // Helper to check if a Cargo package is installed
 fn is_cargo_package_installed(pkg_name: &str) -> bool {
+    // Get the path to the cargo bin directory.
+    let cargo_bin_path = dirs::home_dir()
+        .map(|home| home.join(".cargo").join("bin"))
+        .unwrap_or_else(|| {
+            // Fallback if home_dir() fails.
+            // This fallback is a bit simplistic and might not work on all systems.
+            // A more robust solution would involve better error handling or a different crate.
+            std::path::PathBuf::from("/home/placeless/.cargo/bin") // Assuming Linux-like path
+        });
+
+    let executable_path = cargo_bin_path.join(pkg_name);
+
+    if executable_path.exists() {
+        return true;
+    }
+
+    // Fallback to `cargo install --list` if executable not found
     let output = Command::new("cargo").arg("install").arg("--list").output();
 
     match output {
@@ -213,9 +269,10 @@ fn is_cargo_package_installed(pkg_name: &str) -> bool {
             // The output format is typically "package_name vX.Y.Z"
             // We need to check if the package name exists in the output.
             // A simple check for the package name followed by a space or newline should suffice.
+            // Improved check using grep-like logic: filter lines starting with "pkg " and check for pkg_name.
             stdout
                 .lines()
-                .any(|line| line.split_whitespace().next() == Some(pkg_name))
+                .any(|line| line.trim_start().starts_with(&format!("{} v", pkg_name)))
         }
         Err(e) => {
             eprintln!("Warning: Error executing 'cargo install --list': {}. Assuming '{}' is not installed.", e, pkg_name);
@@ -287,6 +344,29 @@ fn get_installed_apt_packages() -> Result<Vec<String>, Box<dyn std::error::Error
         .collect())
 }
 
+// Helper to get the installed version of an APT package
+fn get_installed_apt_version(pkg_name: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let output = Command::new("dpkg-query")
+        .arg("-W")
+        .arg("-f='${Version}'")
+        .arg(pkg_name)
+        .output()?;
+
+    if !output.status.success() {
+        // Package not found or other error
+        if String::from_utf8_lossy(&output.stderr).contains("no packages found") {
+            return Ok(None); // Package not installed
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to query version for APT package '{}': {}", pkg_name, stderr).into());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The output might be enclosed in single quotes, e.g., '1.2.3'
+    let version = stdout.trim().trim_matches('\'').to_string();
+    Ok(Some(version))
+}
+
 // Helper to get installed Cargo packages
 fn get_installed_cargo_packages() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut packages = Vec::new();
@@ -350,7 +430,15 @@ fn get_installed_flatpak_packages() -> Result<Vec<String>, Box<dyn std::error::E
         .collect())
 }
 
-fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_config(config: &Config, dry_run: bool, yes: bool, only: Option<Vec<String>>) -> Result<(), Box<dyn std::error::Error>> {
+    // Helper closure to check if a section should be processed
+    let should_process = |section_name: &str| -> bool {
+        match &only {
+            Some(sections) => sections.iter().any(|s| s.eq_ignore_ascii_case(section_name)),
+            None => true, // Process all sections if 'only' is not specified
+        }
+    };
+
     // Handle system updates
     if let Some(sys) = &config.system {
         if sys.update {
@@ -367,9 +455,16 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
         // APT package installation is not easily parallelized due to sudo and potential dependencies.
         // We process them sequentially for now.
         for pkg_spec in &apt.list {
-            let pkg_name = pkg_spec.split('=').next().unwrap_or(pkg_spec);
+            let mut pkg_name = pkg_spec.as_str();
+            let mut desired_version: Option<String> = None;
 
-            // Check if package is already installed to avoid unnecessary work.
+            // Check if a specific version is requested
+            if let Some((name, version)) = pkg_spec.split_once('=') {
+                pkg_name = name;
+                desired_version = Some(version.to_string());
+            }
+
+            // Check if package is already installed
             let is_installed = Command::new("dpkg")
                 .arg("-s")
                 .arg(pkg_name)
@@ -378,10 +473,43 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
                 .unwrap_or(false);
 
             if is_installed {
-                println!("APT package '{}' already installed, skipping.", pkg_name);
-                continue;
+                if let Some(version_to_match) = &desired_version {
+                    match get_installed_apt_version(pkg_name) {
+                        Ok(Some(installed_version)) => {
+                            if installed_version == *version_to_match {
+                                println!("APT package '{}' version '{}' already installed, skipping.", pkg_name, installed_version);
+                                continue; // Skip installation if version matches
+                            } else {
+                                println!("APT package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
+                                // Proceed to installation
+                            }
+                        }
+                        Ok(None) => {
+                            // This case should ideally not happen if is_installed is true, but handle defensively.
+                            eprintln!("Warning: APT package '{}' reported as installed but version query failed. Proceeding with installation.", pkg_name);
+                            // Proceed to installation
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Error checking installed APT version for '{}': {}. Proceeding with installation.", pkg_name, e);
+                            // Proceed to installation
+                        }
+                    }
+                } else {
+                    // No version specified, and package is installed. Skip.
+                    println!("APT package '{}' already installed, skipping.", pkg_name);
+                    continue;
+                }
+            } else {
+                // Package is not installed.
+                if desired_version.is_some() {
+                    println!("APT package '{}' version '{}' not installed. Installing.", pkg_name, desired_version.as_ref().unwrap());
+                } else {
+                    println!("APT package '{}' not installed. Installing.", pkg_name);
+                }
+                // Proceed to installation
             }
 
+            // If we reach here, installation is needed.
             let action_desc = format!("Installing APT package '{}'", pkg_spec);
             log_or_eprint(&action_desc, "Failed to log message");
             println!("{}", action_desc);
@@ -389,60 +517,108 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
             if dry_run {
                 println!("Would run: sudo apt install -y {}", pkg_spec);
             } else {
+                if !yes {
+                    print!("Do you want to install '{}'? (y/N): ", pkg_spec);
+                    std::io::Write::flush(&mut std::io::stdout())?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    if !input.trim().eq_ignore_ascii_case("y") {
+                        println!("Installation aborted by user.");
+                        continue; // Skip this package
+                    }
+                }
                 run_command("sudo", &["apt", "install", "-y", pkg_spec])?;
             }
         }
     }
 
-    // Execute Snap commands in parallel, propagating errors
+    // Execute Snap commands
     if let Some(snap) = &config.snap {
-        let result: Result<(), CommandError> = snap.list.par_iter().try_for_each(|pkg| {
-            let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
-            if !is_snap_package_installed(pkg_name) {
-                let command_str = format!("sudo snap install {}", pkg);
-                if dry_run {
+        if dry_run {
+            // For dry run, process sequentially for better readability
+            for pkg in &snap.list {
+                let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
+                if !is_snap_package_installed(pkg_name) {
+                    let command_str = format!("sudo snap install {}", pkg);
                     println!("Would run: {}", command_str);
-                    Ok(()) // In dry run, always succeed
                 } else {
-                    run_command("sudo", &["snap", "install", pkg])
+                    println!("Snap package '{}' already installed, skipping.", pkg_name);
                 }
-            } else {
-                println!("Snap package '{}' already installed, skipping.", pkg_name);
-                Ok(())
             }
-        });
-        result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        } else {
+            // Parallel execution for actual installation
+            let result: Result<(), CommandError> = snap.list.par_iter().try_for_each(|pkg| {
+                let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
+                if !is_snap_package_installed(pkg_name) {
+                    let command_str = format!("sudo snap install {}", pkg);
+                    if !yes {
+                        print!("Do you want to install snap package '{}'? (y/N): ", pkg);
+                        std::io::Write::flush(&mut std::io::stdout())?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        if !input.trim().eq_ignore_ascii_case("y") {
+                            println!("Installation aborted by user.");
+                            return Ok(()); // Skip this package
+                        }
+                    }
+                    run_command("sudo", &["snap", "install", pkg])
+                } else {
+                    println!("Snap package '{}' already installed, skipping.", pkg_name);
+                    Ok(())
+                }
+            });
+            result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        }
     }
 
-    // Execute Flatpak commands in parallel, propagating errors
+    // Execute Flatpak commands
     if let Some(flatpak) = &config.flatpak {
-        let result: Result<(), CommandError> = flatpak.list.par_iter().try_for_each(|pkg| {
-            if !is_flatpak_package_installed(pkg) {
-                let command_str = format!("flatpak install -y {}", pkg);
-                if dry_run {
+        if dry_run {
+            // For dry run, process sequentially for better readability
+            for pkg in &flatpak.list {
+                if !is_flatpak_package_installed(pkg) {
+                    let command_str = format!("flatpak install -y {}", pkg);
                     println!("Would run: {}", command_str);
-                    Ok(()) // In dry run, always succeed
                 } else {
-                    run_command("flatpak", &["install", "-y", pkg])
+                    println!("Flatpak package '{}' already installed, skipping.", pkg);
                 }
-            } else {
-                println!("Flatpak package '{}' already installed, skipping.", pkg);
-                Ok(())
             }
-        });
-        result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        } else {
+            // Parallel execution for actual installation
+            let result: Result<(), CommandError> = flatpak.list.par_iter().try_for_each(|pkg| {
+                if !is_flatpak_package_installed(pkg) {
+                    let command_str = format!("flatpak install -y {}", pkg);
+                    if !yes {
+                        print!("Do you want to install flatpak package '{}'? (y/N): ", pkg);
+                        std::io::Write::flush(&mut std::io::stdout())?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        if !input.trim().eq_ignore_ascii_case("y") {
+                            println!("Installation aborted by user.");
+                            return Ok(()); // Skip this package
+                        }
+                    }
+                    run_command("flatpak", &["install", "-y", pkg])
+                } else {
+                    println!("Flatpak package '{}' already installed, skipping.", pkg);
+                    Ok(())
+                }
+            });
+            result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        }
     }
 
     // Execute Cargo install commands in parallel, propagating errors
     if let Some(cargo) = &config.cargo {
         let result: Result<(), CommandError> = cargo.list.par_iter().try_for_each(|pkg| {
-            if !is_cargo_package_installed(pkg) {
+            if !is_cargo_package_installed(pkg) { // Use the improved check
                 let command_str = format!("cargo install {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
                     Ok(()) // In dry run, always succeed
                 } else {
-                    run_command("cargo", &["install", pkg])
+                    // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
+                    run_command("cargo", &["install", "--locked", "--force", pkg])
                 }
             } else {
                 println!("Cargo package '{}' already installed, skipping.", pkg);
@@ -473,6 +649,16 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
                 println!("Would run: sudo dpkg -i {}", temp_path.display());
                 println!("Would run: sudo apt --fix-broken install -y");
             } else {
+                if !yes {
+                    print!("Do you want to install deb package '{}'? (y/N): ", url);
+                    std::io::Write::flush(&mut std::io::stdout())?;
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    if !input.trim().eq_ignore_ascii_case("y") {
+                        println!("Installation aborted by user.");
+                        continue; // Skip this package
+                    }
+                }
                 run_command(
                     "sudo",
                     &[
@@ -553,54 +739,175 @@ fn export_current_environment() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
+// Function to perform the doctor command logic
+fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Running railtube doctor for: {}", source);
+
+    // Check APT packages
+    if let Some(apt_section) = &config.apt {
+        let toml_packages = apt_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages = get_installed_apt_packages()?;
+        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+
+        // Packages in TOML but not installed
+        let missing_in_apt: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
+        if !missing_in_apt.is_empty() {
+            println!("\nAPT packages listed in TOML but not installed:");
+            for pkg in missing_in_apt {
+                println!("- {}", pkg);
+            }
+        }
+
+        // Packages installed but not in TOML
+        let extra_in_apt: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
+        if !extra_in_apt.is_empty() {
+            println!("\nAPT packages installed but not listed in TOML:");
+            for pkg in extra_in_apt {
+                println!("- {}", pkg);
+            }
+        }
+    }
+
+    // Check Snap packages
+    if let Some(snap_section) = &config.snap {
+        let toml_packages = snap_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages = get_installed_snap_packages()?;
+        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+
+        // Packages in TOML but not installed
+        let missing_in_snap: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
+        if !missing_in_snap.is_empty() {
+            println!("\nSnap packages listed in TOML but not installed:");
+            for pkg in missing_in_snap {
+                println!("- {}", pkg);
+            }
+        }
+
+        // Packages installed but not in TOML
+        let extra_in_snap: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
+        if !extra_in_snap.is_empty() {
+            println!("\nSnap packages installed but not listed in TOML:");
+            for pkg in extra_in_snap {
+                println!("- {}", pkg);
+            }
+        }
+    }
+
+    // Check Flatpak packages
+    if let Some(flatpak_section) = &config.flatpak {
+        let toml_packages = flatpak_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages = get_installed_flatpak_packages()?;
+        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+
+        // Packages in TOML but not installed
+        let missing_in_flatpak: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
+        if !missing_in_flatpak.is_empty() {
+            println!("\nFlatpak packages listed in TOML but not installed:");
+            for pkg in missing_in_flatpak {
+                println!("- {}", pkg);
+            }
+        }
+
+        // Packages installed but not in TOML
+        let extra_in_flatpak: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
+        if !extra_in_flatpak.is_empty() {
+            println!("\nFlatpak packages installed but not listed in TOML:");
+            for pkg in extra_in_flatpak {
+                println!("- {}", pkg);
+            }
+        }
+    }
+
+    // Check Cargo packages
+    if let Some(cargo_section) = &config.cargo {
+        let toml_packages = cargo_section.list.iter().collect::<std::collections::HashSet<_>>();
+        let installed_packages = get_installed_cargo_packages()?;
+        let installed_packages_set = installed_packages.iter().collect::<std::collections::HashSet<_>>();
+
+        // Packages in TOML but not installed
+        let missing_in_cargo: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
+        if !missing_in_cargo.is_empty() {
+            println!("\nCargo packages listed in TOML but not installed:");
+            for pkg in missing_in_cargo {
+                println!("- {}", pkg);
+            }
+        }
+
+        // Packages installed but not in TOML
+        let extra_in_cargo: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
+        if !extra_in_cargo.is_empty() {
+            println!("\nCargo packages installed but not listed in TOML:");
+            for pkg in extra_in_cargo {
+                println!("- {}", pkg);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Fetch and parse TOML configuration
-    let config: Config = match args.command {
-        Commands::Apply {
-            ref source,
-            dry_run,
-        } => {
+    // Handle the Export command separately as it exits early
+    if let Commands::Export { ref output } = args.command {
+        let mut exported_config = export_current_environment()?;
+        let toml_string = toml::to_string_pretty(&exported_config)?;
+
+        // Add comment for unexported sections
+        let mut final_toml_string = String::new();
+        final_toml_string.push_str("# NOTE: scripts and deb sections are not exported as they are defined, not installed.\n");
+        final_toml_string.push_str(&toml_string);
+
+        let mut file = fs::File::create(output)?;
+        file.write_all(final_toml_string.as_bytes())?;
+        println!("Environment exported to {}", output);
+        return Ok(()); // Exit after export
+    }
+
+    // For other commands, fetch and parse the TOML configuration
+    let config: Config = match &args.command {
+        Commands::Apply { ref source, .. } |
+        Commands::Run { ref source, .. } |
+        Commands::Doctor { ref source } => {
             let toml_str = fetch_toml_content(source)?;
             toml::from_str(&toml_str)
                 .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
         }
-        Commands::Run {
-            ref source,
-            ref script_name,
-        } => {
-            let toml_str = fetch_toml_content(source)?;
-            toml::from_str(&toml_str)
-                .map_err(|e: toml::de::Error| Box::new(e) as Box<dyn std::error::Error>)?
-        }
-        Commands::Export { ref output } => {
-            let exported_config = export_current_environment()?;
-            let toml_string = toml::to_string_pretty(&exported_config)?;
-            let mut file = fs::File::create(output)?;
-            file.write_all(toml_string.as_bytes())?;
-            println!("Environment exported to {}", output);
-            return Ok(()); // Exit after export
-        }
+        // Export command is handled above, so this arm should not be reached.
+        // If it were, it would indicate a logic error.
+        Commands::Export { .. } => unreachable!("Export command handled separately"),
     };
 
-    // Execute the appropriate command
+    // Execute the appropriate command logic
     match args.command {
         Commands::Apply {
-            ref source,
             dry_run,
+            yes,
+            only: args_only,
+            .. // Ignore source as it's already used to load config
         } => {
-            apply_config(&config, dry_run)?;
+            apply_config(&config, dry_run, yes, args_only)?;
+        }
+        Commands::Doctor { ref source } => {
+            // The config is already loaded above.
+            doctor_command(&config, source)?;
         }
         Commands::Run {
-            ref source,
             ref script_name,
+            .. // Ignore source as it's already used to load config
         } => {
-            let is_remote = source.starts_with("http://") || source.starts_with("https://");
+            // Determine if the source was a URL for logging purposes
+            let is_remote = match &args.command {
+                Commands::Run { source, .. } => source.starts_with("http://") || source.starts_with("https://"),
+                _ => false, // Should not happen in this arm
+            };
             run_scripts(&config, script_name, is_remote)?;
         }
         Commands::Export { .. } => {
-            // This branch is now handled above.
+            // This case is handled before the match, so it should be unreachable.
+            unreachable!("Export command handled separately");
         }
     };
 
