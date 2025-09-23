@@ -398,7 +398,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
     if let Some(snap) = &config.snap {
         let result: Result<(), CommandError> = snap.list.par_iter().try_for_each(|pkg| {
             let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
-            if !is_snap_package_installed(pkg_name).unwrap_or(false) {
+            if !is_snap_package_installed(pkg_name) {
                 let command_str = format!("sudo snap install {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
@@ -417,7 +417,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
     // Execute Flatpak commands in parallel, propagating errors
     if let Some(flatpak) = &config.flatpak {
         let result: Result<(), CommandError> = flatpak.list.par_iter().try_for_each(|pkg| {
-            if !is_flatpak_package_installed(pkg).unwrap_or(false) {
+            if !is_flatpak_package_installed(pkg) {
                 let command_str = format!("flatpak install -y {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
@@ -436,7 +436,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
     // Execute Cargo install commands in parallel, propagating errors
     if let Some(cargo) = &config.cargo {
         let result: Result<(), CommandError> = cargo.list.par_iter().try_for_each(|pkg| {
-            if !is_cargo_package_installed(pkg).unwrap_or(false) {
+            if !is_cargo_package_installed(pkg) {
                 let command_str = format!("cargo install {}", pkg);
                 if dry_run {
                     println!("Would run: {}", command_str);
