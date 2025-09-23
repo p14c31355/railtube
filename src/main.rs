@@ -230,25 +230,7 @@ fn fetch_toml_content(source: &str) -> Result<String, AppError> {
 }
 
 fn is_cargo_package_installed(pkg_name: &str) -> bool {
-    let cargo_bin_path = dirs::home_dir()
-        .map(|home| home.join(".cargo").join("bin"))
-        .unwrap_or_else(|| {
-            // If home_dir() fails, we can't reliably find cargo bin.
-            // Log a warning and proceed to the fallback check.
-            eprintln!("Warning: Could not determine home directory. Proceeding with 'cargo install --list' fallback.");
-            std::path::PathBuf::new() // Return an empty path, which will likely fail exists() check
-        });
-
-    // Check if the executable exists in the determined cargo bin path
-    if !cargo_bin_path.as_os_str().is_empty() {
-        // Ensure we have a valid path before checking existence
-        let executable_path = cargo_bin_path.join(pkg_name);
-        if executable_path.exists() {
-            return true;
-        }
-    }
-
-    // Fallback to `cargo install --list` if executable not found or cargo_home failed
+    // Fallback to `cargo install --list`
     let output = Command::new("cargo").arg("install").arg("--list").output();
 
     match output {
