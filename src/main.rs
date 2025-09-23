@@ -807,12 +807,12 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
         let toml_packages = apt_section
             .list
             .iter()
-            .map(|pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec)) // Extract package name before '='
+            .map(|pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec))
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_apt_packages()?;
         let installed_packages_set = installed_packages
             .iter()
-            .map(String::as_str) // Convert &String to &str for HashSet comparison
+            .map(String::as_str)
             .collect::<std::collections::HashSet<_>>();
         check_package_discrepancies("APT", &toml_packages, &installed_packages_set);
     }
