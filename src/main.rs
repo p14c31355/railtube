@@ -125,10 +125,16 @@ fn log_message(message: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+// Helper function to log messages and handle errors
+fn log_or_eprint(message: &str, error_message: &str) {
+    if let Err(e) = log_message(message) {
+        eprintln!("{}: {}", error_message, e);
+    }
+}
+
 fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
     let command_str = format!("{} {}", cmd, args.join(" "));
-    log_message(&format!("Executing: {}", command_str))
-        .unwrap_or_else(|e| eprintln!("Failed to log message: {}", e));
+    log_or_eprint(&format!("Executing: {}", command_str), "Failed to log message");
     println!("Executing: {}", command_str);
 
     let mut command = Command::new(cmd);
@@ -136,8 +142,7 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
 
     let output = command.output().map_err(|e| {
         let stderr_msg = format!("Error executing command '{}': {}", command_str, e);
-        log_message(&stderr_msg)
-            .unwrap_or_else(|e| eprintln!("Failed to log error message: {}", e));
+        log_or_eprint(&stderr_msg, "Failed to log error message");
         CommandError {
             command: cmd.to_string(),
             args: args.iter().map(|s| s.to_string()).collect(),
@@ -153,12 +158,10 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
 
     // Log stdout and stderr regardless of success
     if !stdout.is_empty() {
-        log_message(&format!("Stdout:\n{}", stdout))
-            .unwrap_or_else(|e| eprintln!("Failed to log stdout: {}", e));
+        log_or_eprint(&format!("Stdout:\n{}", stdout), "Failed to log stdout");
     }
     if !stderr.is_empty() {
-        log_message(&format!("Stderr:\n{}", stderr))
-            .unwrap_or_else(|e| eprintln!("Failed to log stderr: {}", e));
+        log_or_eprint(&format!("Stderr:\n{}", stderr), "Failed to log stderr");
     }
 
     if !output.status.success() {
@@ -166,7 +169,7 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<(), CommandError> {
             "Command failed with exit code {:?}: {}",
             exit_code, command_str
         );
-        log_message(&error_msg).unwrap_or_else(|e| eprintln!("Failed to log error message: {}", e));
+        log_or_eprint(&error_msg, "Failed to log error message");
         return Err(CommandError {
             command: cmd.to_string(),
             args: args.iter().map(|s| s.to_string()).collect(),
@@ -402,7 +405,7 @@ fn apply_config(config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error
             } else {
                 format!("Installing APT package '{}'", pkg_name)
             };
-            log_message(&action_desc).unwrap_or_else(|e| eprintln!("Failed to log message: {}", e));
+            log_or_eprint(&action_desc, "Failed to log message");
             println!("{}", action_desc);
 
             if dry_run {
