@@ -86,82 +86,29 @@ pub fn apply_config(
 
     if should_process("snap") {
         if let Some(snap) = &config.snap {
-            let packages_to_install: Vec<_> = snap
-                .list
-                .iter()
-                .filter(|pkg| {
-                    let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg);
-                    if !is_snap_package_installed(pkg_name) {
-                        true
-                    } else {
-                        println!("Snap package '{}' already installed, skipping.", pkg_name);
-                        false
-                    }
-                })
-                .collect();
-
-            if !packages_to_install.is_empty() {
-                if dry_run {
-                    for pkg in &packages_to_install {
-                        println!("Would run: sudo snap install {}", pkg);
-                    }
-                } else if !yes {
-                    for pkg in &packages_to_install {
-                        if confirm_installation(&format!(
-                            "Do you want to install snap package '{}'?",
-                            pkg
-                        ))? {
-                            run_command("sudo", &["snap", "install", pkg])?;
-                        } else {
-                            println!("Installation aborted by user.");
-                        }
-                    }
-                } else {
-                    packages_to_install.par_iter().try_for_each(|pkg| {
-                        run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
-                    })?;
-                }
-            }
+            install_generic_packages(
+                &snap.list,
+                "Snap",
+                &["sudo", "snap", "install"],
+                is_snap_package_installed,
+                |pkg| pkg.split_whitespace().next().unwrap_or(pkg),
+                dry_run,
+                yes,
+            )?;
         }
     }
 
     if should_process("flatpak") {
         if let Some(flatpak) = &config.flatpak {
-            let packages_to_install: Vec<_> = flatpak
-                .list
-                .iter()
-                .filter(|pkg| {
-                    if !is_flatpak_package_installed(pkg) {
-                        true
-                    } else {
-                        println!("Flatpak package '{}' already installed, skipping.", pkg);
-                        false
-                    }
-                })
-                .collect();
-
-            if !packages_to_install.is_empty() {
-                if dry_run {
-                    for pkg in &packages_to_install {
-                        println!("Would run: flatpak install -y {}", pkg);
-                    }
-                } else if !yes {
-                    for pkg in &packages_to_install {
-                        if confirm_installation(&format!(
-                            "Do you want to install flatpak package '{}'?",
-                            pkg
-                        ))? {
-                            run_command("flatpak", &["install", "-y", pkg])?;
-                        } else {
-                            println!("Installation aborted by user.");
-                        }
-                    }
-                } else {
-                    packages_to_install.par_iter().try_for_each(|pkg| {
-                        run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
-                    })?;
-                }
-            }
+            install_generic_packages(
+                &flatpak.list,
+                "Flatpak",
+                &["flatpak", "install", "-y"],
+                is_flatpak_package_installed,
+                |pkg| pkg,
+                dry_run,
+                yes,
+            )?;
         }
     }
 
@@ -250,6 +197,61 @@ pub fn apply_config(
                 }
             }
         }
+    }
+
+    Ok(())
+}
+
+fn install_generic_packages(
+    list: &[String],
+    manager_name: &str,
+    base_cmd: &[&str],
+    check_installed: impl Fn(&str) -> bool + Sync + Send,
+    extract_pkg_name: impl Fn(&str) -> &str + Sync + Send,
+    dry_run: bool,
+    yes: bool,
+) -> Result<(), AppError> {
+    let packages_to_install: Vec<&str> = list
+        .iter()
+        .map(|pkg| pkg.as_str())
+        .filter(|pkg| {
+            let pkg_name = extract_pkg_name(pkg);
+            if !check_installed(pkg_name) {
+                true
+            } else {
+                println!("{} package '{}' already installed, skipping.", manager_name, pkg_name);
+                false
+            }
+        })
+        .collect();
+
+    if packages_to_install.is_empty() {
+        return Ok(());
+    }
+
+    if dry_run {
+        for pkg in &packages_to_install {
+            println!("Would run: {} {}", base_cmd.join(" "), pkg);
+        }
+    } else if !yes {
+        for pkg in &packages_to_install {
+            if confirm_installation(&format!(
+                "Do you want to install {} package '{}'?",
+                manager_name, pkg
+            ))? {
+                let mut args: Vec<&str> = base_cmd[1..].to_vec();
+                args.push(pkg);
+                run_command(base_cmd[0], &args)?;
+            } else {
+                println!("Installation aborted by user.");
+            }
+        }
+    } else {
+        packages_to_install.par_iter().try_for_each(|pkg| {
+            let mut args: Vec<&str> = base_cmd[1..].to_vec();
+            args.push(pkg);
+            run_command(base_cmd[0], &args).map_err(AppError::Command)
+        })?;
     }
 
     Ok(())
