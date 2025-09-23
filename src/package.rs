@@ -25,7 +25,10 @@ pub fn is_cargo_package_installed(pkg_name: &str) -> bool {
 }
 
 pub fn get_installed_cargo_version(pkg_name: &str) -> Result<Option<String>, AppError> {
-    let output = Command::new("cargo").arg("install").arg("--list").output()?;
+    let output = Command::new("cargo")
+        .arg("install")
+        .arg("--list")
+        .output()?;
 
     if !output.status.success() {
         return Err(AppError::Other(

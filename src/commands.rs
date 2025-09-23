@@ -367,11 +367,7 @@ fn check_section_discrepancies<F, P>(
     P: Fn(&String) -> &str,
 {
     if let Some(section) = section {
-        let toml_packages = section
-            .list
-            .iter()
-            .map(parse_pkg)
-            .collect::<HashSet<_>>();
+        let toml_packages = section.list.iter().map(parse_pkg).collect::<HashSet<_>>();
         match get_installed() {
             Ok(installed_packages) => {
                 let installed_packages_set = installed_packages
@@ -381,7 +377,10 @@ fn check_section_discrepancies<F, P>(
                 check_package_discrepancies(manager_name, &toml_packages, &installed_packages_set);
             }
             Err(e) => {
-                eprintln!("Warning: Failed to list installed {} packages: {}", manager_name, e);
+                eprintln!(
+                    "Warning: Failed to list installed {} packages: {}",
+                    manager_name, e
+                );
             }
         }
     }
@@ -390,19 +389,13 @@ fn check_section_discrepancies<F, P>(
 pub fn doctor_command(config: &Config, source: &str) -> Result<(), AppError> {
     println!("Running railtube doctor for: {}", source);
 
-    check_section_discrepancies(
-        &config.apt,
-        "APT",
-        get_installed_apt_packages,
-        |pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec.as_str()),
-    );
+    check_section_discrepancies(&config.apt, "APT", get_installed_apt_packages, |pkg_spec| {
+        pkg_spec.split('=').next().unwrap_or(pkg_spec.as_str())
+    });
 
-    check_section_discrepancies(
-        &config.snap,
-        "Snap",
-        get_installed_snap_packages,
-        |pkg| pkg.split_whitespace().next().unwrap_or(pkg.as_str()),
-    );
+    check_section_discrepancies(&config.snap, "Snap", get_installed_snap_packages, |pkg| {
+        pkg.split_whitespace().next().unwrap_or(pkg.as_str())
+    });
 
     check_section_discrepancies(
         &config.flatpak,

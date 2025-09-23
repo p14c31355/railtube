@@ -17,7 +17,6 @@ use utils::*;
 mod commands;
 use commands::*;
 
-
 fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
