@@ -2,7 +2,6 @@ use clap::{Parser, Subcommand};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize}; // Added Serialize
-use thiserror::Error;
 use std::{
     collections::HashMap,
     fs,
@@ -11,6 +10,7 @@ use std::{
     process::Command,
 };
 use tempfile::tempdir;
+use thiserror::Error;
 
 // Custom error type for command execution
 #[derive(Debug)]
@@ -559,7 +559,10 @@ fn apply_config(
                     println!("Would run: sudo apt install -y {}", pkg_spec);
                 } else {
                     if !yes
-                        && !confirm_installation(&format!("Do you want to install '{}'?", pkg_spec))?
+                        && !confirm_installation(&format!(
+                            "Do you want to install '{}'?",
+                            pkg_spec
+                        ))?
                     {
                         println!("Installation aborted by user.");
                         continue; // Skip this package
@@ -607,7 +610,8 @@ fn apply_config(
                     let result: Result<(), AppError> = snap.list.par_iter().try_for_each(|pkg| {
                         let pkg_name = pkg.split_whitespace().next().unwrap_or(pkg); // Get base name for check
                         if !is_snap_package_installed(pkg_name) {
-                            run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
+                            run_command("sudo", &["snap", "install", pkg])
+                                .map_err(AppError::Command)
                         } else {
                             println!("Snap package '{}' already installed, skipping.", pkg_name);
                             Ok(())
@@ -651,14 +655,16 @@ fn apply_config(
                     }
                 } else {
                     // Parallel execution for actual installation
-                    let result: Result<(), AppError> = flatpak.list.par_iter().try_for_each(|pkg| {
-                        if !is_flatpak_package_installed(pkg) {
-                            run_command("flatpak", &["install", "-y", pkg]).map_err(AppError::Command)
-                        } else {
-                            println!("Flatpak package '{}' already installed, skipping.", pkg);
-                            Ok(())
-                        }
-                    });
+                    let result: Result<(), AppError> =
+                        flatpak.list.par_iter().try_for_each(|pkg| {
+                            if !is_flatpak_package_installed(pkg) {
+                                run_command("flatpak", &["install", "-y", pkg])
+                                    .map_err(AppError::Command)
+                            } else {
+                                println!("Flatpak package '{}' already installed, skipping.", pkg);
+                                Ok(())
+                            }
+                        });
                     result?;
                 }
             }
@@ -727,9 +733,9 @@ fn apply_config(
                         &[
                             "dpkg",
                             "-i",
-                            temp_path
-                                .to_str()
-                                .ok_or(AppError::Other("Temporary path is not valid UTF-8".into()))?,
+                            temp_path.to_str().ok_or(AppError::Other(
+                                "Temporary path is not valid UTF-8".into(),
+                            ))?,
                         ],
                     )?;
                     run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
