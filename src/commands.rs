@@ -191,7 +191,7 @@ pub fn apply_config(
         }
     }
 
-        if should_process("cargo") {
+    if should_process("cargo") {
         if let Some(cargo) = &config.cargo {
             for pkg_spec in &cargo.list {
                 let (pkg_name, desired_version) =
@@ -209,7 +209,10 @@ pub fn apply_config(
                                 println!("Cargo package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", pkg_name, installed_version, version_to_match);
                                 should_install = true;
                             } else {
-                                println!("Cargo package '{}' version '{}' already installed, skipping.", pkg_name, installed_version);
+                                println!(
+                                    "Cargo package '{}' version '{}' already installed, skipping.",
+                                    pkg_name, installed_version
+                                );
                             }
                         } else {
                             println!("Cargo package '{}' already installed, skipping.", pkg_name);
@@ -217,7 +220,10 @@ pub fn apply_config(
                     }
                     Ok(None) => {
                         if let Some(version) = &desired_version {
-                            println!("Cargo package '{}' version '{}' not installed. Installing.", pkg_name, version);
+                            println!(
+                                "Cargo package '{}' version '{}' not installed. Installing.",
+                                pkg_name, version
+                            );
                         } else {
                             println!("Cargo package '{}' not installed. Installing.", pkg_name);
                         }
