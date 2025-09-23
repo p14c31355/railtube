@@ -3,10 +3,10 @@ use crate::errors::AppError;
 use crate::package::*;
 use crate::utils::{confirm_installation, run_command};
 use rayon::prelude::*;
+use reqwest::blocking::Client;
 use std::collections::HashSet;
 use std::process::Command;
 use tempfile::tempdir;
-use reqwest::blocking::Client;
 
 pub fn apply_config(
     config: &Config,
@@ -78,16 +78,14 @@ pub fn apply_config(
                         println!("APT package '{}' already installed, skipping.", pkg_name);
                         continue;
                     }
+                } else if desired_version.is_some() {
+                    println!(
+                        "APT package '{}' version '{}' not installed. Installing.",
+                        pkg_name,
+                        desired_version.as_ref().unwrap()
+                    );
                 } else {
-                    if desired_version.is_some() {
-                        println!(
-                            "APT package '{}' version '{}' not installed. Installing.",
-                            pkg_name,
-                            desired_version.as_ref().unwrap()
-                        );
-                    } else {
-                        println!("APT package '{}' not installed. Installing.", pkg_name);
-                    }
+                    println!("APT package '{}' not installed. Installing.", pkg_name);
                 }
 
                 let action_desc = format!("Installing APT package '{}'", pkg_spec);
@@ -274,7 +272,11 @@ pub fn apply_config(
     Ok(())
 }
 
-pub fn run_scripts(config: &Config, script_name: &str, is_remote_source: bool) -> Result<(), AppError> {
+pub fn run_scripts(
+    config: &Config,
+    script_name: &str,
+    is_remote_source: bool,
+) -> Result<(), AppError> {
     if let Some(scripts) = &config.scripts {
         if let Some(command_to_run) = scripts.commands.get(script_name) {
             println!("Running script '{}': {}", script_name, command_to_run);

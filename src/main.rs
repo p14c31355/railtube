@@ -1,52 +1,23 @@
 use clap::Parser;
-use rayon::prelude::*;
-use reqwest::blocking::Client;
-use serde::{Deserialize, Serialize}; // Added Serialize
-use std::{
-    collections::HashMap,
-    fs,
-    fs::OpenOptions,
-    io::{Read, Write},
-    process::Command,
-};
-
-use tempfile::tempdir;
+// Added Serialize
+use std::{fs, io::Write};
 
 mod errors;
-use errors::{AppError, CommandError};
+use errors::AppError;
 
 mod config;
-use config::{Config, Section, SystemSection};
+use config::Config;
 
 mod cli;
 use cli::{Args, Commands};
 
 mod package;
-use package::*;
 mod utils;
 use utils::*;
 mod commands;
 use commands::*;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 // Helper function to confirm installation with the user
-
-
-
-
-
 
 fn main() -> Result<(), AppError> {
     let args = Args::parse();
