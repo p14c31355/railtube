@@ -257,7 +257,8 @@ fn is_cargo_package_installed(pkg_name: &str) -> bool {
     };
 
     // Check if the executable exists in the determined cargo bin path
-    if !cargo_bin_path.as_os_str().is_empty() { // Ensure we have a valid path before checking existence
+    if !cargo_bin_path.as_os_str().is_empty() {
+        // Ensure we have a valid path before checking existence
         let executable_path = cargo_bin_path.join(pkg_name);
         if executable_path.exists() {
             return true;
@@ -775,7 +776,10 @@ fn check_package_discrepancies(
     // Packages in TOML but not installed
     let missing: Vec<_> = toml_packages.difference(installed_packages).collect();
     if !missing.is_empty() {
-        println!("\n{} packages listed in TOML but not installed:", package_manager_name);
+        println!(
+            "\n{} packages listed in TOML but not installed:",
+            package_manager_name
+        );
         for pkg in missing {
             println!("- {}", pkg);
         }
@@ -784,7 +788,10 @@ fn check_package_discrepancies(
     // Packages installed but not in TOML
     let extra: Vec<_> = installed_packages.difference(toml_packages).collect();
     if !extra.is_empty() {
-        println!("\n{} packages installed but not listed in TOML:", package_manager_name);
+        println!(
+            "\n{} packages installed but not listed in TOML:",
+            package_manager_name
+        );
         for pkg in extra {
             println!("- {}", pkg);
         }
