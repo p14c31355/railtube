@@ -615,9 +615,9 @@ fn apply_config(
                 }
             } else {
                 // Parallel installation
-                packages_to_install
-                    .par_iter()
-                    .try_for_each(|pkg| run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command))?;
+                packages_to_install.par_iter().try_for_each(|pkg| {
+                    run_command("sudo", &["snap", "install", pkg]).map_err(AppError::Command)
+                })?;
             }
         }
     }
@@ -698,9 +698,10 @@ fn apply_config(
             }
 
             // Cargo install doesn't typically prompt for confirmation, so no 'yes' check needed here.
-            packages_to_install
-                .par_iter()
-                .try_for_each(|pkg| run_command("cargo", &["install", "--locked", "--force", pkg]).map_err(AppError::Command))?;
+            packages_to_install.par_iter().try_for_each(|pkg| {
+                run_command("cargo", &["install", "--locked", "--force", pkg])
+                    .map_err(AppError::Command)
+            })?;
         }
     }
 
