@@ -333,7 +333,7 @@ pub fn check_package_discrepancies<W: std::io::Write>(
         }
     }
 
-    let extra: Vec<_> = installed_packages.difference(toml_packages).collect();
+    let extra: Vec<_> = installed_packages.difference(toml_packages).copied().collect();
     if !extra.is_empty() {
         writeln!(
             writer,
