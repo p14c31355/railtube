@@ -2,8 +2,6 @@ use crate::errors::AppError;
 use std::collections::HashMap;
 use std::process::Command;
 
-
-
 pub fn is_snap_package_installed(pkg_name: &str) -> bool {
     let base_pkg_name = pkg_name.split_whitespace().next().unwrap_or(pkg_name);
 
@@ -60,7 +58,6 @@ pub fn get_installed_apt_packages() -> Result<Vec<String>, AppError> {
         .map(String::from)
         .collect())
 }
-
 
 pub fn get_installed_cargo_packages() -> Result<Vec<String>, AppError> {
     let mut packages = Vec::new();
@@ -137,7 +134,8 @@ pub fn get_installed_apt_packages_map() -> Result<HashMap<String, String>, AppEr
             format!(
                 "Failed to list installed APT packages with versions: {}",
                 stderr
-            ).into(),
+            )
+            .into(),
         ));
     }
 
@@ -189,16 +187,28 @@ pub fn determine_package_installation(
                 println!("{} package '{}' installed with version '{}', but '{}' is requested. Reinstalling.", package_type, pkg_name, installed_version, version_to_match);
                 should_install = true;
             } else {
-                println!("{} package '{}' version '{}' already installed, skipping.", package_type, pkg_name, installed_version);
+                println!(
+                    "{} package '{}' version '{}' already installed, skipping.",
+                    package_type, pkg_name, installed_version
+                );
             }
         } else {
-            println!("{} package '{}' already installed, skipping.", package_type, pkg_name);
+            println!(
+                "{} package '{}' already installed, skipping.",
+                package_type, pkg_name
+            );
         }
     } else {
         if let Some(version) = desired_version {
-            println!("{} package '{}' version '{}' not installed. Installing.", package_type, pkg_name, version);
+            println!(
+                "{} package '{}' version '{}' not installed. Installing.",
+                package_type, pkg_name, version
+            );
         } else {
-            println!("{} package '{}' not installed. Installing.", package_type, pkg_name);
+            println!(
+                "{} package '{}' not installed. Installing.",
+                package_type, pkg_name
+            );
         }
         should_install = true;
     }

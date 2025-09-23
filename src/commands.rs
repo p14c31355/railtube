@@ -51,7 +51,12 @@ pub fn apply_config(
                         (pkg_spec.as_str(), None)
                     };
 
-                let should_install = crate::package::determine_package_installation(pkg_name, &desired_version, apt_map.get(pkg_name), "APT");
+                let should_install = crate::package::determine_package_installation(
+                    pkg_name,
+                    &desired_version,
+                    apt_map.get(pkg_name),
+                    "APT",
+                );
 
                 if !should_install {
                     continue;
@@ -177,7 +182,12 @@ pub fn apply_config(
                         (pkg_spec.as_str(), None)
                     };
 
-                let should_install = crate::package::determine_package_installation(pkg_name, &desired_version, cargo_map.get(pkg_name), "Cargo");
+                let should_install = crate::package::determine_package_installation(
+                    pkg_name,
+                    &desired_version,
+                    cargo_map.get(pkg_name),
+                    "Cargo",
+                );
 
                 if should_install {
                     if dry_run {
