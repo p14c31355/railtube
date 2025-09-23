@@ -239,23 +239,32 @@ fn fetch_toml_content(source: &str) -> Result<String, Box<dyn std::error::Error>
 
 // Helper to check if a Cargo package is installed
 fn is_cargo_package_installed(pkg_name: &str) -> bool {
-    // Get the path to the cargo bin directory.
-    let cargo_bin_path = dirs::home_dir()
-        .map(|home| home.join(".cargo").join("bin"))
-        .unwrap_or_else(|| {
-            // Fallback if home_dir() fails.
+    let cargo_bin_path = match std::env::var("CARGO_HOME") {
+        Ok(val) => std::path::PathBuf::from(val).join("bin"),
+        Err(_) => {
+            // Fallback if CARGO_HOME is not set or dirs::cargo_home() fails.
             // This fallback is a bit simplistic and might not work on all systems.
             // A more robust solution would involve better error handling or a different crate.
-            std::path::PathBuf::from("/home/placeless/.cargo/bin") // Assuming Linux-like path
-        });
+            dirs::home_dir()
+                .map(|home| home.join(".cargo").join("bin"))
+                .unwrap_or_else(|| {
+                    // If home_dir() also fails, we can't reliably find cargo bin.
+                    // Log a warning and proceed to the fallback check.
+                    eprintln!("Warning: Could not determine CARGO_HOME or home directory. Proceeding with 'cargo install --list' fallback.");
+                    std::path::PathBuf::new() // Return an empty path, which will likely fail exists() check
+                })
+        }
+    };
 
-    let executable_path = cargo_bin_path.join(pkg_name);
-
-    if executable_path.exists() {
-        return true;
+    // Check if the executable exists in the determined cargo bin path
+    if !cargo_bin_path.as_os_str().is_empty() { // Ensure we have a valid path before checking existence
+        let executable_path = cargo_bin_path.join(pkg_name);
+        if executable_path.exists() {
+            return true;
+        }
     }
 
-    // Fallback to `cargo install --list` if executable not found
+    // Fallback to `cargo install --list` if executable not found or cargo_home failed
     let output = Command::new("cargo").arg("install").arg("--list").output();
 
     match output {
@@ -757,6 +766,31 @@ fn export_current_environment() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
+// Helper function to check package discrepancies for a given package manager
+fn check_package_discrepancies(
+    package_manager_name: &str,
+    toml_packages: &std::collections::HashSet<&str>,
+    installed_packages: &std::collections::HashSet<&str>,
+) {
+    // Packages in TOML but not installed
+    let missing: Vec<_> = toml_packages.difference(installed_packages).collect();
+    if !missing.is_empty() {
+        println!("\n{} packages listed in TOML but not installed:", package_manager_name);
+        for pkg in missing {
+            println!("- {}", pkg);
+        }
+    }
+
+    // Packages installed but not in TOML
+    let extra: Vec<_> = installed_packages.difference(toml_packages).collect();
+    if !extra.is_empty() {
+        println!("\n{} packages installed but not listed in TOML:", package_manager_name);
+        for pkg in extra {
+            println!("- {}", pkg);
+        }
+    }
+}
+
 // Function to perform the doctor command logic
 fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("Running railtube doctor for: {}", source);
@@ -766,29 +800,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
         let toml_packages = apt_section
             .list
             .iter()
+            .map(|pkg_spec| pkg_spec.split('=').next().unwrap_or(pkg_spec)) // Extract package name before '='
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_apt_packages()?;
         let installed_packages_set = installed_packages
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
-
-        // Packages in TOML but not installed
-        let missing_in_apt: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
-        if !missing_in_apt.is_empty() {
-            println!("\nAPT packages listed in TOML but not installed:");
-            for pkg in missing_in_apt {
-                println!("- {}", pkg);
-            }
-        }
-
-        // Packages installed but not in TOML
-        let extra_in_apt: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
-        if !extra_in_apt.is_empty() {
-            println!("\nAPT packages installed but not listed in TOML:");
-            for pkg in extra_in_apt {
-                println!("- {}", pkg);
-            }
-        }
+        check_package_discrepancies("APT", &toml_packages, &installed_packages_set);
     }
 
     // Check Snap packages
@@ -796,29 +815,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
         let toml_packages = snap_section
             .list
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_snap_packages()?;
         let installed_packages_set = installed_packages
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
-
-        // Packages in TOML but not installed
-        let missing_in_snap: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
-        if !missing_in_snap.is_empty() {
-            println!("\nSnap packages listed in TOML but not installed:");
-            for pkg in missing_in_snap {
-                println!("- {}", pkg);
-            }
-        }
-
-        // Packages installed but not in TOML
-        let extra_in_snap: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
-        if !extra_in_snap.is_empty() {
-            println!("\nSnap packages installed but not listed in TOML:");
-            for pkg in extra_in_snap {
-                println!("- {}", pkg);
-            }
-        }
+        check_package_discrepancies("Snap", &toml_packages, &installed_packages_set);
     }
 
     // Check Flatpak packages
@@ -826,30 +830,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
         let toml_packages = flatpak_section
             .list
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_flatpak_packages()?;
         let installed_packages_set = installed_packages
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
-
-        // Packages in TOML but not installed
-        let missing_in_flatpak: Vec<_> =
-            toml_packages.difference(&installed_packages_set).collect();
-        if !missing_in_flatpak.is_empty() {
-            println!("\nFlatpak packages listed in TOML but not installed:");
-            for pkg in missing_in_flatpak {
-                println!("- {}", pkg);
-            }
-        }
-
-        // Packages installed but not in TOML
-        let extra_in_flatpak: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
-        if !extra_in_flatpak.is_empty() {
-            println!("\nFlatpak packages installed but not listed in TOML:");
-            for pkg in extra_in_flatpak {
-                println!("- {}", pkg);
-            }
-        }
+        check_package_discrepancies("Flatpak", &toml_packages, &installed_packages_set);
     }
 
     // Check Cargo packages
@@ -857,29 +845,14 @@ fn doctor_command(config: &Config, source: &str) -> Result<(), Box<dyn std::erro
         let toml_packages = cargo_section
             .list
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
         let installed_packages = get_installed_cargo_packages()?;
         let installed_packages_set = installed_packages
             .iter()
+            .map(String::as_str) // Convert &String to &str for HashSet comparison
             .collect::<std::collections::HashSet<_>>();
-
-        // Packages in TOML but not installed
-        let missing_in_cargo: Vec<_> = toml_packages.difference(&installed_packages_set).collect();
-        if !missing_in_cargo.is_empty() {
-            println!("\nCargo packages listed in TOML but not installed:");
-            for pkg in missing_in_cargo {
-                println!("- {}", pkg);
-            }
-        }
-
-        // Packages installed but not in TOML
-        let extra_in_cargo: Vec<_> = installed_packages_set.difference(&toml_packages).collect();
-        if !extra_in_cargo.is_empty() {
-            println!("\nCargo packages installed but not listed in TOML:");
-            for pkg in extra_in_cargo {
-                println!("- {}", pkg);
-            }
-        }
+        check_package_discrepancies("Cargo", &toml_packages, &installed_packages_set);
     }
 
     Ok(())
