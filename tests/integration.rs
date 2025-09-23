@@ -57,10 +57,11 @@ fn test_export_generates_toml() {
     ];
 
     for (command, args, name) in &prerequisites {
-        if let Err(e) = std::process::Command::new(command).args(*args).status() {
+                let status = std::process::Command::new(command).args(*args).status();
+        if !status.map_or(false, |s| s.success()) {
             eprintln!(
-                "{} prerequisite check failed: {}. Skipping export test.",
-                name, e
+                "Prerequisite '{}' not met. Skipping export test.",
+                name
             );
             return;
         }
