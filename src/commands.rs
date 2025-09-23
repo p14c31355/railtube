@@ -321,7 +321,7 @@ pub fn check_package_discrepancies<W: std::io::Write>(
     toml_packages: &HashSet<&str>,
     installed_packages: &HashSet<&str>,
 ) -> std::io::Result<()> {
-    let missing: Vec<_> = toml_packages.difference(installed_packages).collect();
+    let missing: Vec<_> = toml_packages.difference(installed_packages).copied().collect();
     if !missing.is_empty() {
         writeln!(
             writer,
