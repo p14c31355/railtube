@@ -7,6 +7,7 @@ use reqwest::blocking::Client;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use tempfile::tempdir;
+use std::io;
 
 pub fn apply_config(
     config: &Config,
@@ -314,32 +315,37 @@ pub fn export_current_environment() -> Result<Config, AppError> {
     Ok(config)
 }
 
-pub fn check_package_discrepancies(
+pub fn check_package_discrepancies<W: std::io::Write>(
+    writer: &mut W,
     package_manager_name: &str,
     toml_packages: &HashSet<&str>,
     installed_packages: &HashSet<&str>,
-) {
+) -> std::io::Result<()> {
     let missing: Vec<_> = toml_packages.difference(installed_packages).collect();
     if !missing.is_empty() {
-        println!(
+        writeln!(
+            writer,
             "\n{} packages listed in TOML but not installed:",
             package_manager_name
-        );
+        )?;
         for pkg in missing {
-            println!("- {}", pkg);
+            writeln!(writer, "- {}", pkg)?;
         }
     }
 
     let extra: Vec<_> = installed_packages.difference(toml_packages).collect();
     if !extra.is_empty() {
-        println!(
+        writeln!(
+            writer,
             "\n{} packages installed but not listed in TOML:",
             package_manager_name
-        );
+        )?;
         for pkg in extra {
-            println!("- {}", pkg);
+            writeln!(writer, "- {}", pkg)?;
         }
     }
+
+    Ok(())
 }
 
 fn check_section_discrepancies<F, P>(
@@ -359,7 +365,9 @@ fn check_section_discrepancies<F, P>(
                     .iter()
                     .map(String::as_str)
                     .collect::<HashSet<_>>();
-                check_package_discrepancies(manager_name, &toml_packages, &installed_packages_set);
+                let mut stdout = io::stdout().lock();
+                check_package_discrepancies(&mut stdout, manager_name, &toml_packages, &installed_packages_set)
+                    .expect("Failed to write to stdout");
             }
             Err(e) => {
                 eprintln!(
@@ -412,8 +420,11 @@ mod tests {
         let mut installed_packages = HashSet::new();
         installed_packages.insert("extra_pkg");
 
-        // Capture output if needed, but for basic test, just call to ensure no panic
-        check_package_discrepancies("Test", &toml_packages, &installed_packages);
+        let mut output = Vec::new();
+        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("missing_pkg"));
+        assert!(output_str.contains("extra_pkg"));
     }
 
     #[test]
@@ -424,6 +435,9 @@ mod tests {
         let mut installed_packages = HashSet::new();
         installed_packages.insert("common_pkg");
 
-        check_package_discrepancies("Test", &toml_packages, &installed_packages);
+        let mut output = Vec::new();
+        check_package_discrepancies(&mut output, "Test", &toml_packages, &installed_packages).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.trim().is_empty());
     }
 }
