@@ -29,7 +29,7 @@ pub fn apply_config(
                 if dry_run {
                     println!("Would run: sudo apt update");
                 } else {
-                    run_command("sudo", &["apt", "update"])?;
+                    run_command("sudo", ["apt", "update"])?;
                 }
             }
         }
@@ -79,7 +79,7 @@ pub fn apply_config(
                         println!("Installation aborted by user.");
                         continue;
                     }
-                    run_command("sudo", &["apt", "install", "-y", pkg_spec])?;
+                    run_command("sudo", ["apt", "install", "-y", pkg_spec])?;
                 }
             }
         }
@@ -141,7 +141,7 @@ pub fn apply_config(
                     if dry_run {
                         println!("Would run: cargo install --locked --force {}", pkg_spec);
                     } else {
-                        run_command("cargo", &["install", "--locked", "--force", pkg_spec])?;
+                        run_command("cargo", ["install", "--locked", "--force", pkg_spec])?;
                     }
                 }
             }
@@ -184,9 +184,10 @@ pub fn apply_config(
                         println!("Installation aborted by user.");
                         continue;
                     }
-                    let dpkg_args = vec![OsStr::new("dpkg"), OsStr::new("-i"), temp_path.as_os_str()];
+                    let dpkg_args =
+                        vec![OsStr::new("dpkg"), OsStr::new("-i"), temp_path.as_os_str()];
                     run_command("sudo", dpkg_args)?;
-                    run_command("sudo", &["apt", "--fix-broken", "install", "-y"])?;
+                    run_command("sudo", ["apt", "--fix-broken", "install", "-y"])?;
                 }
             }
         }
@@ -226,7 +227,10 @@ fn install_generic_packages(
     }
 
     if !packages_to_install.is_empty() {
-        println!("Will attempt to install the following {} packages: {:?}", manager_name, packages_to_install);
+        println!(
+            "Will attempt to install the following {} packages: {:?}",
+            manager_name, packages_to_install
+        );
     }
 
     if dry_run {
@@ -274,7 +278,7 @@ pub fn run_scripts(
                 }
             }
 
-            run_command("sh", &["-c", command_to_run])?;
+            run_command("sh", ["-c", command_to_run])?;
         } else {
             eprintln!("Script '{}' not found in [scripts] section.", script_name);
             return Err(AppError::Other(

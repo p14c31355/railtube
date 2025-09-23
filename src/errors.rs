@@ -17,7 +17,11 @@ impl std::fmt::Display for CommandError {
             f,
             "Command failed: {} {}",
             self.command.to_string_lossy(),
-            self.args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join(" ")
+            self.args
+                .iter()
+                .map(|arg| arg.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
         )?;
         if let Some(code) = self.exit_code {
             writeln!(f, "Exit code: {}", code)?;

@@ -31,8 +31,14 @@ where
     I: AsRef<OsStr>,
 {
     let cmd_os = cmd.as_ref();
-    let arg_os: Vec<OsString> = args.into_iter().map(|a| a.as_ref().to_os_string()).collect();
-    let arg_strs: Vec<String> = arg_os.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+    let arg_os: Vec<OsString> = args
+        .into_iter()
+        .map(|a| a.as_ref().to_os_string())
+        .collect();
+    let arg_strs: Vec<String> = arg_os
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     let command_str = format!("{} {}", cmd_os.to_string_lossy(), arg_strs.join(" "));
     log_or_eprint(
         &format!("Executing: {}", command_str),
@@ -40,7 +46,7 @@ where
     );
     println!("Executing: {}", command_str);
 
-    let mut command = Command::new(cmd_os.to_owned());
+    let mut command = Command::new(cmd_os);
     command.args(arg_os.iter().map(|s| s.as_os_str()));
 
     let output = command.output().map_err(|e| {
@@ -48,7 +54,7 @@ where
         log_or_eprint(&stderr_msg, "Failed to log error message");
         CommandError {
             command: cmd_os.to_os_string(),
-            args: arg_os.iter().cloned().collect(),
+            args: arg_os.to_vec(),
             exit_code: None,
             stdout: String::new(),
             stderr: stderr_msg,
@@ -75,7 +81,7 @@ where
         log_or_eprint(&error_msg, "Failed to log error message");
         return Err(CommandError {
             command: cmd_os.to_os_string(),
-            args: arg_os.iter().cloned().collect(),
+            args: arg_os.to_vec(),
             exit_code,
             stdout,
             stderr,
